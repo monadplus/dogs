@@ -2,7 +2,7 @@ package free
 
 import org.scalatest.FunSpec
 
-class ReaderDIYTest extends FunSpec {
+class InterpreterTest extends FunSpec {
   describe("Interpreting a KVS algebra using Free monad") {
     import Interpreter._
 
