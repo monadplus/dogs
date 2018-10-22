@@ -11,11 +11,12 @@ class InterpreterTest extends FunSpec {
       assert(res === Map("Runar" -> "is cool!"))
     }
     it("should get a value and delete it if it does meet a condition") {
-      def program(k: String): Free[KVS, Unit] =
+      def program(k: String): KVS[Unit] =
         for {
           v <- get(k)
           _ <- if (v.toInt >= 10) delete(k) else put(k, (v.toInt + 1).toString)
         } yield ()
+
       assert(runKVS(program("count"), Map("count" -> "0")) === Map("count" -> "1"))
       assert(runKVS(program("count"), Map("count" -> "10")) === Map.empty)
     }
