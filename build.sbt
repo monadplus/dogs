@@ -13,6 +13,7 @@ lazy val commonDependencies = Seq(
   "org.typelevel" %% "cats-core" % catsVersion, // required
   "org.typelevel" %% "cats-macros" % catsVersion, // required by core
   "org.typelevel" %% "cats-kernel" % catsVersion, // required by core
+  "org.typelevel" %% "cats-free" % catsVersion,
   "org.typelevel" %% "mouse" % mouseVersion, // convenient syntax
   "org.typelevel" %% "kittens" % kittensVersion, // automatic type class instances derivation
   "org.scalacheck" %% "scalacheck" % scalaCheckVersion % Test,

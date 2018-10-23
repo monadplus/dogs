@@ -2,9 +2,10 @@ package free
 
 import cats._
 import cats.data._
+import cats.free.Free
 
+// Source: https://www.youtube.com/watch?v=hmX2s3pe_qk
 object Parser {
-
   /*
   - Take a problem that occurs often
   - Expresss instances of it as sentences in a simple language
@@ -86,16 +87,16 @@ object Parser {
   case class Or3[A](a: Exp3[A], b: Exp3[A])  extends Exp3[A]
   case class Var3[A](v: A)                   extends Exp3[A]
 
-//  def evaluate[A](e: Exp3[A], env: A => Boolean): Boolean =
-//    e.fold(identity[Boolean], _ && _, !_, _ || _, env)
-//
-//  // this is a flatMap
-//  def replace[A, B](e: Exp3[A], env: A => Exp3[B]): Exp3[B] =
-//    e.fold(Lit3(_), And3(_, _), Not3(_), Or3(_, _), env)
+  def evaluate[A](e: Exp3[A], env: A => Boolean): Boolean =
+    e.fold[Boolean](identity[Boolean], _ && _, !_, _ || _, env)
+
+  // this is a flatMap
+  def replace[A, B](e: Exp3[A], env: A => Exp3[B]): Exp3[B] =
+    e.fold[Exp3[B]](Lit3(_), And3(_, _), Not3(_), Or3(_, _), env)
 }
 
 object ParserRevisited {
-  // This names are the one used in the book
+  // names are the one used in the book
   sealed trait Exp[F[_], A]
   case class TerminalExp[F[_], A](a: A)               extends Exp[F, A]
   case class NonTerminalExp[F[_], A](s: F[Exp[F, A]]) extends Exp[F, A]
@@ -124,6 +125,43 @@ object ParserRevisited {
   // Option monad using Free
   type Trivial[A] = Unit
   type Option[A]  = Free[Trivial, A]
+}
 
-  // todo: write a natural tranformation between BoolExp
+sealed trait CharToyAlgebra[+Next]
+object CharToyAlgebra {
+
+  // The algebra
+  case class CharOutput[Next](c: Char, n: Next) extends CharToyAlgebra[Next]
+  case class CharBell[Next](n: Next)            extends CharToyAlgebra[Next]
+  case class CharDone()                         extends CharToyAlgebra[Nothing]
+
+  // Free algebra
+  def output(c: Char): Free[CharToyAlgebra, Unit] =
+    Free.liftF[CharToyAlgebra, Unit](CharOutput(c, ()))
+  def bell: Free[CharToyAlgebra, Unit] =
+    Free.liftF[CharToyAlgebra, Unit](CharBell(()))
+  def done: Free[CharToyAlgebra, Unit] =
+    Free.liftF[CharToyAlgebra, Unit](CharDone())
+  def pure[A](a: A): Free[CharToyAlgebra, A] =
+    Free.pure(a)
+
+  implicit val charToyAlgebraFunctor: Functor[CharToyAlgebra] = new Functor[CharToyAlgebra] {
+    override def map[A, B](fa: CharToyAlgebra[A])(f: A => B): CharToyAlgebra[B] =
+      fa match {
+        case CharOutput(c, n) => CharOutput(c, f(n))
+        case CharBell(n)      => CharBell(f(n))
+        case CharDone()       => CharDone()
+      }
+  }
+  // Create an interpreter
+  def showProgram[R: Show](p: Free[CharToyAlgebra, R])(implicit s: Show[Char]): String =
+    p.fold[String](
+      { r: R =>
+        "return " + Show[R].show(r) + "\n"
+      }, {
+        case CharOutput(c, n) => "output: " + Show[Char].show(c) + "\n" + showProgram(n)
+        case CharBell(n)      => "bell" + "\n" + showProgram(n)
+        case CharDone()       => "done\n"
+      }
+    )
 }

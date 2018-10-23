@@ -22,3 +22,23 @@ class InterpreterTest extends FunSpec {
     }
   }
 }
+
+class Interpreter0Test extends FunSpec {
+  describe("Interpreting a Console algebra using Free monad") {
+    import Interpreter0._
+
+    it("should read from console and write in memory") {
+      val sayHello: Console[Unit] =
+        for {
+          _    <- putStr("What's your name ?")
+          name <- getStr
+          _    <- putStr(s"Nice to meet you $name")
+        } yield ()
+
+      assert(
+        runConsole(sayHello, Vector("Arnau"), Vector.empty) === Vector("What's your name ?",
+                                                                       "Nice to meet you Arnau")
+      )
+    }
+  }
+}

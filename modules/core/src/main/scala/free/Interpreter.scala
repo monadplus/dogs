@@ -13,6 +13,7 @@ object Interpreter extends App {
 
   case class Done[F[_]: Functor, A](a: A)             extends Free[F, A]
   case class More[F[_]: Functor, A](k: F[Free[F, A]]) extends Free[F, A]
+  // this is actually a monad
   abstract class Free[F[_], A](implicit F: Functor[F]) {
     def flatMap[B](f: A => Free[F, B]): Free[F, B] =
       this match {
@@ -56,5 +57,41 @@ object Interpreter extends App {
       case More(Delete(k, a)) =>
         runKVS(a, table - k)
       case Done(_) => table
+    }
+}
+
+object Interpreter0 {
+  import Interpreter._
+
+  // Define the algebra
+  sealed trait ConsoleAlg[A]
+  case class Read[A](r: String => A)   extends ConsoleAlg[A]
+  case class Write[A](v: String, a: A) extends ConsoleAlg[A]
+
+  // Make your algebra monadic: Free[Algebra, A]
+  type Console[A] = Free[ConsoleAlg, A]
+
+  implicit lazy val ConsoleFunctor: Functor[ConsoleAlg] = new Functor[ConsoleAlg] {
+    override def map[A, B](fa: ConsoleAlg[A])(f: A => B): ConsoleAlg[B] =
+      fa match {
+        case Read(r)     => Read(s => f(r(s)))
+        case Write(v, a) => Write(v, f(a))
+      }
+  }
+
+  def getStr: Console[String] =
+    More(Read(s => Done(s)))
+  def putStr(v: String): Console[Unit] =
+    More(Write(v, Done(())))
+
+  // create an interpreter  of the monadic algebra
+  def runConsole[A](c: Console[A], input: Vector[String], output: Vector[String]): Vector[String] =
+    c match {
+      case More(Read(r)) =>
+        val s = input.head
+        runConsole(r(s), input.tail, output)
+      case More(Write(v, a)) =>
+        runConsole(a, input, output :+ v)
+      case Done(_) => output
     }
 }
