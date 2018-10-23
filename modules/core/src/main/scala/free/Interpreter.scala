@@ -2,6 +2,7 @@ package free
 
 import cats.Functor
 
+// Source: https://www.youtube.com/watch?v=ZasXwtTRkio
 object Interpreter extends App {
   sealed trait KVSAlg[A]
   case class Put[A](key: String, value: String, a: A) extends KVSAlg[A]
