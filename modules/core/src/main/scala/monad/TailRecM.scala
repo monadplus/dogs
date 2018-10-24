@@ -4,7 +4,7 @@ import cats._
 import cats.data.Writer
 
 import scala.annotation.tailrec
-//import cats.implicits._
+import cats.implicits._
 
 object TailRecM extends App {
 
@@ -46,6 +46,31 @@ object TailRecM extends App {
         for {
           _   <- Writer.tell(LongProduct(x))
           res <- Writer.value[LongProduct, Either[Long, Unit]](Left(m - 1))
+        } yield res
+    }
+}
+
+object TailRecMDIY {
+  type Log = Vector[String]
+
+  def powWriter3(x: Long, exp: Long): Writer[Log, Long] = exp match {
+    case 0 => 1L.writer(Vector(s"Start of computation. Current value: ${1L}"))
+    case _ =>
+      for {
+        res  <- powWriter3(x, exp - 1)
+        next = x * res
+        _    <- Vector(s"Computing exp: $exp. Current value: $next").tell
+      } yield next
+  }
+
+  def powWriter4(x: Long, exp: Long): Writer[Log, Long] =
+    FlatMap[Writer[Log, ?]].tailRecM[(Long, Long), Long]((exp, 1L)) {
+      case (0, acc) =>
+        acc.asRight[(Long, Long)].writer(Vector(s"End of computation. Value: $acc"))
+      case (m, acc) =>
+        for {
+          _   <- Vector(s"Computing.. $m steps left >> Current value: $acc").tell
+          res <- Writer.value[Log, Either[(Long, Long), Long]](Left(m - 1 -> x * acc))
         } yield res
     }
 }

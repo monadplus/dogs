@@ -80,7 +80,7 @@ object ComposableApplication {
   //   final def foldMap[M[_]](f: FunctionK[S, M])(implicit M: Monad[M]): M[A] =
   //    M.tailRecM(this)(_.step match {
   //      case Pure(a) => M.pure(Right(a))
-  //      case Suspend(sa) => M.map(f(sa))(Right(_))
+  //      case Suspend(sa) =>k M.map(f(sa))(Right(_))
   //      case FlatMapped(c, g) => M.map(c.foldMap(f))(cc => Left(g(cc)))
   //    })
 
