@@ -12,8 +12,9 @@ object ComposableApplication {
   Otherwise update both accounts
    */
 
-  type Account       = String
-  type User          = String
+  type Account = String
+  type UserID  = String
+  case class User(userId: UserID) extends AnyVal
   type Authorization = String
   type Logger        = String
   type ErrorHandler  = String
@@ -42,6 +43,7 @@ object ComposableApplication {
   sealed trait Instruction
   def transfer(amount: Long, from: Account, to: Account, user: User): List[Instruction] = ???
 
+  //todo: this algebra is broken ...
   // User interaction
   sealed trait Interact[A]
   case class Ask(prompt: String) extends Interact[String]
@@ -116,4 +118,77 @@ object ComposableApplication {
 //          (List(msg), ())
 //    }
 //  }
+
+  // New Algebra: Security algebra
+
+  // Problem: check if user is authenticated.
+  // yes => tell secrets
+  // no  => tell to go away
+
+  type Password   = String
+  type Permission = String
+
+  sealed trait Auth[A]
+
+  case class Login(u: UserID, p: Password)         extends Auth[User]
+  case class HasPermission(u: User, p: Permission) extends Auth[Boolean]
+
+  // Can we do this ? Not yet !
+
+//  val prg2: Free[???, Unit] = for {
+//    uid <- Ask("What's your ID?")
+//    pwd <- Ask("What's your password")
+//    user <- Login(uid, pwd)
+//    b <- HasPermission(user, "KnowTheSecret")
+//    _ <- if (b) Tell("secret")
+//    else Tell("Go away!")
+//  } yield ()
+
+  case class Coproduct[F[_], G[_], A](value: Either[F[A], G[A]])
+
+  type App[A] = Coproduct[Interact, Auth, A]
+
+  // Now we need a type class to lift either F or G into the Coproduct
+  sealed trait Inject[F[_], G[_]] {
+    def inj[A](sub: F[A]): G[A]
+  }
+
+  object Inject {
+    // Identity Function
+    implicit def ref1[F[_]]: Inject[F, F]                        = ???
+    implicit def left[F[_], G[_]]: Inject[F, Coproduct[F, G, ?]] = ???
+    implicit def right[F[_], G[_], H[_]](implicit I: Inject[F, G]): Inject[F, Coproduct[H, G, ?]] =
+      ???
+  }
+
+  def lift[F[_], G[_], A](fa: F[A])(implicit I: Inject[F, G]): Free[G, A] =
+    Free.liftF(I.inj(fa))
+
+  class Interacts[F[_]](implicit I: Inject[Interact, F]) {
+    def tell(msg: String): Free[F, Unit] =
+      lift(Tell(msg))
+    def ask(prompt: String): Free[F, String] =
+      lift(Ask(prompt))
+  }
+  class Auths[F[_]](implicit I: Inject[Auth, F]) {
+    def login(u: UserID, p: Password): Free[F, User] =
+      lift(Login(u, p))
+    def hasPermission(u: User, p: Permission): Free[F, Boolean] =
+      lift(HasPermission(u, p))
+  }
+
+  // end result
+  def prg[F[_]](implicit I: Interacts[F], A: Auths[F]): Free[F, Unit] = {
+    import I._; import A._
+    for {
+      uid  <- ask("What's your ID?")
+      pwd  <- ask("What's your password")
+      user <- login(uid, pwd)
+      b    <- hasPermission(user, "KnowTheSecret")
+      _    <- if (b) tell("secret") else tell("Go away!")
+    } yield ()
+  }
+
+  // How do we run the Free Monad Coproduct
+
 }
