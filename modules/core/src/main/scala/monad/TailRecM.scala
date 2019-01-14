@@ -18,6 +18,12 @@ object TailRecM extends App {
     }
   }
 
+  def powWriter5(x: Long, exp: Long)(implicit m: Monoid[LongProduct]): Writer[LongProduct, Unit] =
+    FlatMap[Writer[LongProduct, ?]].tailRecM(exp) {
+      case 0   => Writer(m.empty, Right(()))
+      case exp => Writer(LongProduct(x), Left(exp - 1))
+    }
+
   def powWriter(x: Long, exp: Long)(implicit m: Monoid[LongProduct]): Writer[LongProduct, Unit] =
     exp match {
       case 0 => Writer(m.empty, ())
@@ -48,6 +54,9 @@ object TailRecM extends App {
           res <- Writer.value[LongProduct, Either[Long, Unit]](Left(m - 1))
         } yield res
     }
+
+  println(powWriter5(2, 4).run._1.value)
+
 }
 
 object TailRecMDIY {

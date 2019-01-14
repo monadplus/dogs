@@ -5,7 +5,6 @@
     MVar - a mutable location that can be empty, useful as synchronization and communication channel
  */
 
-import cats.{Id, Parallel}
 import cats.implicits._
 import cats.effect._
 import concurrent._
