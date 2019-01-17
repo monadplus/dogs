@@ -3,7 +3,7 @@ import java.util.concurrent.{Executors, ScheduledExecutorService}
 import java.nio.ByteBuffer
 import java.util.concurrent.atomic.AtomicBoolean
 
-import cats.FlatMap
+import cats.{ApplicativeError, FlatMap, Parallel}
 
 import scala.concurrent.duration.FiniteDuration
 import scala.concurrent.ExecutionContext
@@ -22,6 +22,17 @@ object CatsIO extends App {
   implicit val cs: ContextShift[IO]     = IOContextShift.global
   implicit val timer: Timer[IO]         = IO.timer(scala.concurrent.ExecutionContext.Implicits.global)
   implicit val global: ExecutionContext = scala.concurrent.ExecutionContext.Implicits.global
+
+  // IO is trampolined
+  def loop[F[_]: Async](n: Int): F[Int] =
+    for {
+      n <- Async[F].async[Int] { cb =>
+            cb(Right(n))
+          }
+      res <- if (n > 0) loop(n - 1) else 0.pure[F]
+    } yield res
+
+//  loop[IO](10000).unsafeRunSync()
 
   def sleepDIY(d: FiniteDuration)(implicit sc: ScheduledExecutorService): IO[Unit] =
     IO.cancelable { cb =>
@@ -49,6 +60,17 @@ object CatsIO extends App {
   // --------------------------------------------------
   // --------------------------------------------------
 
+  /** When to use IO.shift:
+    *
+    * *          - shifting blocking actions off of the main compute pool,
+    * *          - defensively re-shifting asynchronous continuations back
+    * *            to the main compute pool
+    * *          - yielding control to some underlying pool for fairness
+    * *            reasons, and
+    * *          - preventing an overflow of the call stack in the case of
+    * *            improperly constructed `async` actions
+    *
+    * */
   // Stack safe because of IO.suspend (flatMap is also stack safe..)
   def fib(n: Int)(implicit cs: ContextShift[IO]): IO[Long] = {
     def go(n: Int, a: Long, b: Long): IO[Long] =
@@ -368,11 +390,13 @@ object CatsIO extends App {
 
   def readFileNonBlocking2(file: File): IO[String] = {
 
-    val isActive = new AtomicBoolean(true)
-    val acquire  = IO.shift *> IO(new BufferedReader(new FileReader(file)))
+    val printThread = IO(println(s"Thread: ${Thread.currentThread().getName}"))
+    val isActive    = new AtomicBoolean(true)
+    val acquire     = IO.shift *> IO(new BufferedReader(new FileReader(file)))
 
-    IO.suspend {
+    printThread *> IO.suspend {
       acquire.bracket { in =>
+        println(s"Shifted: ${Thread.currentThread().getName}")
         IO {
           val content      = new StringBuilder()
           var line: String = null
@@ -383,14 +407,91 @@ object CatsIO extends App {
               else
                 null
             }
+            Thread.sleep(100)
             if (line != null) content.append(line)
           } while (line != null)
+          println("do while finished")
           content.toString()
         }
       } { in =>
-        IO(isActive.set(false)) *> IO { in.synchronized { in.close() } }
+        IO(println("cancelled or finished!")) *> IO(isActive.set(false)) *> IO {
+          in.synchronized { in.close() }
+        }
       }
     }
   }
 
+  val rfnb = for {
+    _     <- IO(println(s"Main thread: ${Thread.currentThread().getName}"))
+    fiber <- readFileNonBlocking2(new File("data/lore.txt")).start
+    _     <- IO.sleep(500.millis) *> IO(println("cancelling")) *> fiber.cancel
+  } yield ()
+
+//  rfnb.unsafeRunSync()
+//  println("finish")
+
+  // --------------------------------------------------
+  // --------------------------------------------------
+  // --------------------------------------------------
+  // --------------------------------------------------
+
+  // Error Handling
+
+  def exponentialBackOff[M[_], A](ma: M[A])(maxRetries: Int)(implicit
+                                                             m: ApplicativeError[M, Throwable],
+                                                             timer: Timer[M]): M[A] = {
+    def loop(retries: Int)(delay: FiniteDuration): M[A] =
+      ma.handleErrorWith { error =>
+        if (retries > 0)
+          timer.sleep(delay) *> loop(retries - 1)(delay * 2)
+        else
+          m.raiseError(new RuntimeException(s"[$maxRetries retries] $error"))
+      }
+
+    loop(maxRetries)(100.millis)
+  }
+
+  val p2 =
+    for {
+      res <- exponentialBackOff(IO.raiseError(new RuntimeException("boom!")))(maxRetries = 3).attempt
+      _ <- res match {
+            case Left(e)  => IO(println(e.getMessage))
+            case Right(_) => IO.unit
+          }
+    } yield ()
+
+//  p2.unsafeRunSync()
+
+  // --------------------------------------------------
+  // --------------------------------------------------
+  // --------------------------------------------------
+  // --------------------------------------------------
+
+  // Parallel type class
+
+  def runAfter[A](fa: IO[A], duration: FiniteDuration)(implicit timer: Timer[IO]): IO[A] = {
+    (IO.sleep(duration) *> IO.suspend(fa)).guaranteeCase {
+      case ExitCase.Canceled => IO(println("Canceled"))
+      case _                 => IO.unit
+    }
+  }
+
+  val ioa  = IO(println(s"Running on thread: ${Thread.currentThread().getName}")) *> IO.pure(1)
+  val boom = IO.raiseError[Int](new RuntimeException("boom!"))
+
+  (runAfter(ioa, 100.millis), runAfter(ioa, 150.millis), runAfter(ioa, 500.millis))
+    .parMapN { case (a, b, c) => a + b + c }
+//    .unsafeRunSync()
+
+  // Whole computation will fail but it will release resources
+  (runAfter(ioa, 1.seconds), runAfter(boom, 150.millis))
+    .parMapN { case (a, b) => a + b }
+//    .unsafeRunSync()
+
+//  List.fill(10)(runAfter(ioa, 100.millis)).parSequence.unsafeRunSync()
+  List(100, 200, 300)
+    .parTraverse { i =>
+      runAfter(ioa, i.millis)
+    }
+    .unsafeRunSync()
 }
