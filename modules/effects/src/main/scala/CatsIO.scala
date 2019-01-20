@@ -3,7 +3,7 @@ import java.util.concurrent.{Executors, ScheduledExecutorService}
 import java.nio.ByteBuffer
 import java.util.concurrent.atomic.AtomicBoolean
 
-import cats.{ApplicativeError, FlatMap, Parallel}
+import cats.{ApplicativeError, FlatMap}
 
 import scala.concurrent.duration.FiniteDuration
 import scala.concurrent.ExecutionContext
@@ -11,7 +11,7 @@ import scala.concurrent.duration._
 import scala.util.control.NonFatal
 import cats.effect.internals.IOContextShift
 import cats.effect._
-import cats.effect.concurrent.Deferred
+import cats.effect.concurrent.{Deferred, Ref}
 import cats.implicits._
 import cats.effect.implicits._
 
@@ -247,7 +247,7 @@ object CatsIO extends App {
       text <- result // this will block
     } yield text
 
-  println { readFileOrNone.unsafeRunSync() }
+//  println { readFileOrNone.unsafeRunSync() }
 
   // --------------------------------------------------
   // --------------------------------------------------
@@ -359,6 +359,13 @@ object CatsIO extends App {
   // --------------------------------------------------
   // --------------------------------------------------
   // --------------------------------------------------
+
+  def parTupled[F[_]: Concurrent, A, B](fa: F[A])(fb: F[B]): F[(A, B)] =
+    fa.start.bracket { fiberA =>
+      fb.start.bracket { fiberB =>
+        (fiberA.join, fiberB.join).tupled // map2
+      }(_.cancel)
+    }(_.cancel)
 
   def readFirstLine(file: File): IO[String] =
     IO(new BufferedReader(new FileReader(file))).bracket { in =>
