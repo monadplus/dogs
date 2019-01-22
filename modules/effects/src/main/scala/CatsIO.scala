@@ -11,7 +11,7 @@ import scala.concurrent.duration._
 import scala.util.control.NonFatal
 import cats.effect.internals.IOContextShift
 import cats.effect._
-import cats.effect.concurrent.{Deferred, Ref}
+import cats.effect.concurrent.{Deferred, MVar, Ref}
 import cats.implicits._
 import cats.effect.implicits._
 

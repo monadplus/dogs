@@ -1,16 +1,26 @@
 import java.util.concurrent.atomic.AtomicReference
 
+import cats.Parallel
 import cats.effect.{Concurrent, IO, Timer}
 import cats.effect.concurrent._
 
 import scala.concurrent.duration.FiniteDuration
 import cats.implicits._
+import cats.effect._
 import cats.effect.implicits._
+import cats.effect.internals.IOContextShift
 
 import scala.annotation.tailrec
 import scala.collection.immutable.Queue
+import scala.concurrent.ExecutionContext
+import scala.concurrent.duration._
 
-object Concurrency {
+object Concurrency extends App {
+
+  // Required by ConcurrentIO
+  implicit val cs: ContextShift[IO] =
+    IOContextShift.global
+
   trait OwnRef[F[_], A] {
     def get: F[A]
     def set(a: A): F[Unit]
@@ -43,7 +53,7 @@ object Concurrency {
 
   // Debounce in JS
   class Debouncer[F[_]: Concurrent: Timer, A](debounceOver: FiniteDuration,
-                                              current: Ref[F, Option[F[Unit]]] /*CanceToken*/
+                                              current: Ref[F, Option[F[Unit]]] /*CancelToken*/
   ) {
     private val delay: F[Unit] = implicitly[Timer[F]].sleep(debounceOver)
     def apply(t: F[A]): F[A] =
@@ -67,8 +77,6 @@ object Concurrency {
   // ------------------------------
 
   // Naive Effectful Unbounded Queue
-  // Left:  no elements, people waiting for elements
-  // Right: bunch of elements already in the queue waiting for someone to pick them up
   class EQueue[F[_]: Concurrent, A](state: Ref[F, Either[Queue[Deferred[F, A]], Queue[A]]]) {
     def enqueue(a: A): F[Unit] =
       state.modify {
@@ -108,4 +116,89 @@ object Concurrency {
         .map(new EQueue[F, A](_))
   }
 
+  // ------------------------------
+  // ------------------------------
+  // ------------------------------
+
+  def sum(state: MVar[IO, Int], list: List[Int]): IO[Int] =
+    list match {
+      case Nil => state.take
+      case x :: xs =>
+        state.take.flatMap { current =>
+          state.put(current + x).flatMap(_ => sum(state, xs))
+        }
+    }
+
+  MVar.of[IO, Int](0).flatMap(sum(_, (0 until 100).toList))
+
+  // ----------------------------------------
+
+  // Signaling option, because we need to detect completion
+  type Channel[A] = MVar[IO, Option[A]]
+
+  def producer(ch: Channel[Int], list: List[Int]): IO[Unit] =
+    list match {
+      case Nil =>
+        ch.put(None) // we are done!
+      case head :: tail =>
+        // next please
+        (IO(println(s"Put: $head")) *> ch.put(Some(head)), producer(ch, tail)).parMapN((_, _) => ())
+    }
+
+  def consumer(ch: Channel[Int], sum: Long): IO[Long] =
+    IO(println(s"Read: $sum")) *> ch.take.flatMap {
+      case Some(x) =>
+        // next please
+        consumer(ch, sum + x)
+      case None =>
+        IO.pure(sum) // we are done!
+    }
+
+  val p = for {
+    channel <- MVar[IO].empty[Option[Int]]
+    count = 1000
+    producerTask = producer(channel, (0 until count).toList)
+    consumerTask = consumer(channel, 0L)
+
+    fp <- producerTask.start
+    fc <- consumerTask.start
+    _ <- fp.join
+    sum <- fc.join
+  } yield sum
+
+//  TODO: it has race condditions
+//  p.flatMap(sum => IO(println(sum))).unsafeRunSync()
+
+  // ------------------------------
+  // ------------------------------
+  // ------------------------------
+
+  class PreciousResource[F[_]](name: String, s: Semaphore[F])(implicit F: Concurrent[F], timer: Timer[F]) {
+    def use: F[Unit] =
+      for {
+        x <- s.available
+        _ <- F.delay(println(s"$name >> Availability: $x"))
+        _ <- s.acquire
+        y <- s.available
+        _ <- F.delay(println(s"$name >> Started | Availability: $y"))
+        _ <- timer.sleep(3.seconds)
+        _ <- s.release
+        z <- s.available
+        _ <- F.delay(println(s"$name >> Done | Availability: $z"))
+      } yield ()
+  }
+
+  implicit val timer = IO.timer(ExecutionContext.global)
+  implicit val par: Parallel[IO, IO] = Parallel[IO, IO.Par].asInstanceOf[Parallel[IO, IO]]
+
+  val program: IO[Unit] =
+    for {
+      s <- Semaphore[IO](1)
+      r1 = new PreciousResource[IO]("R1", s)
+      r2 = new PreciousResource[IO]("R2", s)
+      r3 = new PreciousResource[IO]("R3", s)
+      _ <- List(r1.use, r2.use, r3.use).parSequence.void
+    } yield ()
+
+  program.unsafeRunSync()
 }
