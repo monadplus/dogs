@@ -2,7 +2,7 @@ package macros
 
 import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
-import scala.reflect.macros.{whitebox, Context}
+import scala.reflect.macros.whitebox
 import scala.language.experimental.macros
 
 object Macros {
