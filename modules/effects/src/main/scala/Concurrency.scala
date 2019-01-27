@@ -257,7 +257,25 @@ object CopyFiles {
     } yield count
 }
 
+// Exercise:
+//  - Finally tagless
+//  - Don't use semaphore
+
 object CopyFiles2 {
+
+  case class Token(dummy: Boolean = false) extends AnyVal
+
+  type Semaphore[F[_]] = MVar[F, Token]
+
+  // TODO: compilers marks it as unused
+  implicit def MVarSyntax[F[_]](semaphore: Semaphore[F]) /*(implicit bracket: Bracket[F, Throwable])*/: MVarOps[F] =
+    new MVarOps[F](semaphore)
+
+  final class MVarOps[F[_]](val self: Semaphore[F]) extends AnyVal {
+    def withPermit[A](t: F[A])(implicit F: Bracket[F, Throwable]): F[A] =
+      F.bracket(self.put(Token()))(_ => t)(_ => self.take >> ().pure[F])
+  }
+
   private def ioStream[F[_]: Sync, T <: Closeable](file: File, semaphore: Semaphore[F])(f: File => T): Resource[F, T] =
     Resource.make {
       Sync[F].delay { f(file) }
@@ -269,7 +287,6 @@ object CopyFiles2 {
       }
     }
 
-  // .bracketCase(...): could work but is a lot of boilerplate coded
   private def inputOutputStreams[F[_]: Sync](in: File,
                                              out: File,
                                              semaphore: Semaphore[F]): Resource[F, (InputStream, OutputStream)] =
@@ -296,12 +313,9 @@ object CopyFiles2 {
       total <- transmit(origin, destination, buffer, 0L)
     } yield total
 
-  //      Same as withPermit
-  //      _ <- semaphore.acquire
-  //      _ <- semaphore.release
   def copy[F[_]: Concurrent](origin: File, destination: File): F[Long] =
     for {
-      semaphore <- Semaphore[F](1)
+      semaphore <- MVar[F].empty[Token]
       count <- inputOutputStreams(origin, destination, semaphore).use {
         // The order is important !
         //   (put withPermit outside inputOutputStreams and see the effects)
@@ -315,13 +329,30 @@ object ConcurrencyExamples extends IOApp {
 //  import CopyFiles._
   import CopyFiles2._
 
+  private def askConfirmation: IO[Boolean] =
+    for {
+      _ <- IO(println("File already exists! Do you want to override it: yes or no ?"))
+      resp <- IO(scala.io.StdIn.readLine())
+    } yield resp == "yes"
+
   override def run(args: List[String]): IO[ExitCode] =
     for {
-      _ <- if (args.length < 2) IO.raiseError(new IllegalArgumentException("Need origin and destination files"))
+      _ <- if (args.length < 2) IO.raiseError(new IllegalArgumentException("Error: need origin and destination files"))
       else IO.unit
       orig = new File(args(0))
       dest = new File(args(1))
-      count <- copy[IO](orig, dest)
+      _ <- if (orig == dest)
+        IO.raiseError(new IllegalArgumentException("Error: origin and destination files files are the same"))
+      else
+        IO.unit
+      isConfirmed <- if (dest.exists())
+        askConfirmation
+      else
+        IO.pure(true)
+      count <- if (isConfirmed)
+        copy[IO](orig, dest)
+      else
+        IO.pure(0)
       _ <- IO(println(s"$count bytes copied from ${orig.getPath} to ${dest.getPath}"))
     } yield ExitCode.Success
 }
