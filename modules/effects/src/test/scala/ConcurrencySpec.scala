@@ -27,7 +27,8 @@ class ConcurrencySpec extends FunSpec {
   }
 
   describe("CopyFile") {
-    import CopyFiles._
+
+    import concurrency.CopyFiles2._
 
     val text =
       """
@@ -47,7 +48,7 @@ class ConcurrencySpec extends FunSpec {
     writer.write(text.getBytes())
 
     it("should transfer the content of a file to another file") {
-      val copiedBytes = copy(input, output).unsafeRunSync()
+      val copiedBytes = copy[IO](input, output).unsafeRunSync()
       assert(copiedBytes === text.getBytes().length)
       val res = readFileContent(output)
       assert(res === text)

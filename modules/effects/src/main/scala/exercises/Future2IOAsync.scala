@@ -10,13 +10,11 @@ object Future2IOAsync {
   def convert[A](fa: => Future[A])(implicit ec: ExecutionContext): IO[A] =
     fa.value match {
       case Some(result) =>
-        println("Completed")
         result match {
           case Success(value) => IO.pure(value)
           case Failure(e)     => IO.raiseError(e)
         }
       case None =>
-        println("Uncompleted")
         IO.async { cb =>
           fa.onComplete {
             case Success(value) => cb(Right(value))
