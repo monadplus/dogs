@@ -14,24 +14,50 @@ import cats.effect._
 import cats.effect.concurrent.{Deferred, MVar, Ref}
 import cats.implicits._
 import cats.effect.implicits._
+import cats.effect.ExitCase.{Canceled, Completed, Error}
+import scala.util._ // Try 
 
 object CatsIO extends App {
 
   implicit val scheduledExecutorService: ScheduledExecutorService =
     Executors.newScheduledThreadPool(4)
-  implicit val cs: ContextShift[IO] = IOContextShift.global
+  implicit val cs: ContextShift[IO]     = IOContextShift.global
   implicit val global: ExecutionContext = scala.concurrent.ExecutionContext.Implicits.global
-  implicit val timer: Timer[IO] = IO.timer(global)
+  implicit val timer: Timer[IO]         = IO.timer(global)
+
+  type Callback[-A] = Either[Throwable, A] => Unit
+
+  // def asyncF[A](k: (Either[Throwable, A] => Unit) => IO[Unit]): IO[A] =
+  class PurePromise[F[_], A](ref: Ref[F, Either[List[Callback[A]], A]])(implicit F: Async[F]) {
+    def get: F[A] = F.asyncF { cb =>
+      ref.modify {
+        case current @ Right(value) =>
+          (current, F.delay(cb(Right(value))))
+        case Left(waiting) =>
+          (Left(cb :: waiting), F.unit)
+      }
+    }
+
+    def complete(value: A): F[Unit] =
+      F.flatten(
+        ref.modify {
+          case current @ Right(_) =>
+            (current, F.unit)
+          case Left(waiting) =>
+            (Right(value), F.delay(waiting.foreach(cb => cb(Right(value)))))
+        }
+      )
+  }
 
   // IO is trampolined
   def loop[F[_]: Async](n: Int): F[Int] =
     for {
       n <- Async[F].async[Int] { cb =>
-        if (n == 100)
-          cb(Left(new RuntimeException("boom")))
-        else
-          cb(Right(n))
-      }
+            if (n == 100)
+              cb(Left(new RuntimeException("boom")))
+            else
+              cb(Right(n))
+          }
       res <- if (n > 0) loop(n - 1) else 0.pure[F]
     } yield res
 
@@ -47,9 +73,9 @@ object CatsIO extends App {
 
   // it blocks :shrug:
   val p = for {
-    _ <- IO { println("Before") }
+    _   <- IO { println("Before") }
     res <- sleepDIY(1.seconds) *> IO.pure(10)
-    _ <- IO { println("After") }
+    _   <- IO { println("After") }
   } yield res
 
   //  Before
@@ -101,7 +127,7 @@ object CatsIO extends App {
 
   val fib10000 = for {
     fib <- fib(10000)
-    _ <- IO { println(s"Fib of 10000 is $fib") }
+    _   <- IO { println(s"Fib of 10000 is $fib") }
   } yield fib
 
 //  fib10000.unsafeRunSync()
@@ -112,9 +138,10 @@ object CatsIO extends App {
   // --------------------------------------------------
 
   def unsafeFileToString(file: File, isActive: AtomicBoolean): String = {
-    val aFile = new RandomAccessFile(file, "r")
+    println("unsafeFileToString")
+    val aFile     = new RandomAccessFile(file, "r")
     val inChannel = aFile.getChannel
-    val buffer = ByteBuffer.allocate(8) // small to make a lot of whiles
+    val buffer    = ByteBuffer.allocate(8) // small to make a lot of whiles
     try {
       val sb = new StringBuilder()
       while ({ inChannel.read(buffer) > 0 } && isActive.get()) {
@@ -133,6 +160,20 @@ object CatsIO extends App {
   }
 
   def readFile0(file: File)(implicit ec: ExecutionContext): IO[String] =
+    // TODO: this won't work as IO is uncancelable 
+    // IO(new AtomicBoolean(true)).bracketCase { isActive =>
+    //   IO.async[String] { cb =>
+    //     ec.execute(new Runnable() {
+    //       override def run(): Unit =
+    //         cb(Try(unsafeFileToString(file, isActive)).toEither)
+    //     })
+    //   }
+    // } { (isActive, exit) => 
+    //   exit match {
+    //     case Completed => IO("completed") *>IO.unit
+    //     case Error(_) | Canceled => IO("canceled") *> IO(isActive.set(false))
+    //   }
+    // }.start
     IO.cancelable[String] { cb =>
       val isActive = new AtomicBoolean(true)
       ec.execute(() => {
@@ -145,17 +186,13 @@ object CatsIO extends App {
       IO { println("Releasing resources in a safe way"); isActive.set(false) }
     }
 
-  type Error = String
-  def readFileOrTimeOut(file: File, timeout: FiniteDuration): IO[Either[Error, String]] =
-    readFile0(file).timeout(timeout).map { Right.apply }.handleErrorWith { _ =>
-      IO.pure(Left("Timeout exception"))
-    }
+  def readFileOrTimeOut(file: File, timeout: FiniteDuration): IO[Either[Throwable, String]] =
+    readFile0(file).timeout(timeout).attempt
 
-  readFileOrTimeOut(new File("data/lore.txt"), 10.millis)
-//    .unsafeRunSync() match {
-//    case Right(text) => println(text); ExitCode.Success
-//    case Left(e)     => println(e); ExitCode.Error
-//  }
+  readFileOrTimeOut(new File("data/lore.txt"), 100.millis).unsafeRunSync() match {
+    case Right(text) => println(text); ExitCode.Success
+    case Left(e)     => println(e); ExitCode.Error
+  }
 
   def readFile(file: File, isCancelled: Deferred[IO, Boolean])(implicit ec: ExecutionContext) =
     IO.cancelable[String] { cb =>
@@ -182,12 +219,12 @@ object CatsIO extends App {
     }
 
   (for {
-    deferred <- Deferred[IO, Boolean]
-    fiber <- readFile(new File("data/lore.txt"), deferred).start
-    _ <- IO.sleep(10.millis) *> fiber.cancel
+    deferred    <- Deferred[IO, Boolean]
+    fiber       <- readFile(new File("data/lore.txt"), deferred).start
+    _           <- IO.sleep(10.millis) *> fiber.cancel
     isCancelled <- deferred.get
-    lore <- if (isCancelled) IO.pure("Exception") else fiber.join
-    _ <- IO(println(lore))
+    lore        <- if (isCancelled) IO.pure("Exception") else fiber.join
+    _           <- IO(println(lore))
   } yield ()) //.unsafeRunSync()
 
   /**
@@ -203,8 +240,8 @@ object CatsIO extends App {
     for {
       t0 <- Concurrent[F].delay { System.currentTimeMillis() }
       fiber <- Concurrent[F].start {
-        Concurrent[F].uncancelable(timer.sleep(1.seconds))
-      }
+                Concurrent[F].uncancelable(timer.sleep(1.seconds))
+              }
       _ <- fiber.cancel // can't be cancelled
 //      _ <- fiber.join   // will block until fiber is done
       _ <- Concurrent[F].delay { println(System.currentTimeMillis() - t0) }
@@ -243,8 +280,8 @@ object CatsIO extends App {
   val readFileOrNone =
     for {
       (result, cancelToken) <- await(readFile0(new File("data/lore.txt")))
-      _ <- IO.sleep(2.seconds) <* cancelToken
-      text <- result // this will block
+      _                     <- IO.sleep(2.seconds) <* cancelToken
+      text                  <- result // this will block
     } yield text
 
 //  println { readFileOrNone.unsafeRunSync() }
@@ -292,14 +329,14 @@ object CatsIO extends App {
   // --------------------------------------------------
 
   val launchMissiles = IO.raiseError(new Exception("Boom!"))
-  val runToBunker = IO(println("To the bunker!"))
+  val runToBunker    = IO(println("To the bunker!"))
 
   def launchAndRun(implicit cs: ContextShift[IO]): IO[Unit] =
     for {
       fiber <- (IO.sleep(1.seconds) *> runToBunker).start
       _ <- launchMissiles.handleErrorWith { _ =>
-        fiber.cancel *> IO(println("Something went wrong, cancelling missiles launching"))
-      }
+            fiber.cancel *> IO(println("Something went wrong, cancelling missiles launching"))
+          }
 //      _ <- fiber.join // blocks
     } yield ()
 
@@ -324,7 +361,7 @@ object CatsIO extends App {
 
   val cancellableFib = for {
     fiber <- fib2(1000, 0, 1).start
-    _ <- IO.sleep(1.millis) *> fiber.cancel
+    _     <- IO.sleep(1.millis) *> fiber.cancel
   } yield ()
 
 //  cancellableFib.unsafeRunSync() // Computes 100 and finishes
@@ -379,7 +416,7 @@ object CatsIO extends App {
     val acquire = IO.shift *> IO(new BufferedReader(new FileReader(file)))
     acquire.bracket { in =>
       IO {
-        val content = new StringBuilder()
+        val content      = new StringBuilder()
         var line: String = null
         do {
           line = in.readLine()
@@ -398,14 +435,14 @@ object CatsIO extends App {
   def readFileNonBlocking2(file: File): IO[String] = {
 
     val printThread = IO(println(s"Thread: ${Thread.currentThread().getName}"))
-    val isActive = new AtomicBoolean(true)
-    val acquire = IO.shift *> IO(new BufferedReader(new FileReader(file)))
+    val isActive    = new AtomicBoolean(true)
+    val acquire     = IO.shift *> IO(new BufferedReader(new FileReader(file)))
 
     printThread *> IO.suspend {
       acquire.bracket { in =>
         println(s"Shifted: ${Thread.currentThread().getName}")
         IO {
-          val content = new StringBuilder()
+          val content      = new StringBuilder()
           var line: String = null
           do {
             line = in.synchronized {
@@ -429,9 +466,9 @@ object CatsIO extends App {
   }
 
   val rfnb = for {
-    _ <- IO(println(s"Main thread: ${Thread.currentThread().getName}"))
+    _     <- IO(println(s"Main thread: ${Thread.currentThread().getName}"))
     fiber <- readFileNonBlocking2(new File("data/lore.txt")).start
-    _ <- IO.sleep(500.millis) *> IO(println("cancelling")) *> fiber.cancel
+    _     <- IO.sleep(500.millis) *> IO(println("cancelling")) *> fiber.cancel
   } yield ()
 
 //  rfnb.unsafeRunSync()
@@ -462,9 +499,9 @@ object CatsIO extends App {
     for {
       res <- exponentialBackOff(IO.raiseError(new RuntimeException("boom!")))(maxRetries = 3).attempt
       _ <- res match {
-        case Left(e)  => IO(println(e.getMessage))
-        case Right(_) => IO.unit
-      }
+            case Left(e)  => IO(println(e.getMessage))
+            case Right(_) => IO.unit
+          }
     } yield ()
 
 //  p2.unsafeRunSync()
@@ -482,7 +519,7 @@ object CatsIO extends App {
       case _                 => IO.unit
     }
 
-  val ioa = IO(println(s"Running on thread: ${Thread.currentThread().getName}")) *> IO.pure(1)
+  val ioa  = IO(println(s"Running on thread: ${Thread.currentThread().getName}")) *> IO.pure(1)
   val boom = IO.raiseError[Int](new RuntimeException("boom!"))
 
   (runAfter(ioa, 100.millis), runAfter(ioa, 150.millis), runAfter(ioa, 500.millis))
@@ -544,9 +581,9 @@ object CatsIO extends App {
 
   val p4 =
     for {
-      fiber1 <- infiniteIO2(1)(csOne)
+      fiber1  <- infiniteIO2(1)(csOne)
       fiber11 <- infiniteIO2(11)(csOne)
-      fiber2 <- infiniteIO2(2)(csTwo)
+      fiber2  <- infiniteIO2(2)(csTwo)
       fiber22 <- infiniteIO2(22)(csTwo)
     } yield ()
 

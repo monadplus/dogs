@@ -51,7 +51,7 @@ class ConcurrencySpec extends FunSpec {
       val copiedBytes = copy[IO](input, output).unsafeRunSync()
       assert(copiedBytes === text.getBytes().length)
       val res = readFileContent(output)
-      assert(res === text)
+      assert(res.trim() === text.trim())
     }
   }
 }
