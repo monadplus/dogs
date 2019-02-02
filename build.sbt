@@ -85,6 +85,9 @@ lazy val commonSettings: Seq[Def.Setting[_]] = Seq(
   parallelExecution in Test := true,
   fork in Test := true,
   libraryDependencies ++= commonDependencies,
+  // coverageMinimum := 70,
+  // coverageFailOnMinimum := false,
+  // coverageHighlighting := true,
   addCompilerPlugin("org.spire-math" %% "kind-projector" % kindProjectorVersion),
   addCompilerPlugin("com.olegpy" %% "better-monadic-for" % "0.3.0-M4")
 ) ++ compilerFlags

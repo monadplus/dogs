@@ -1,7 +1,11 @@
+sudo: false
 language: scala
 
 scala:
   - 2.12.7
+
+jdk:
+  - oraclejdk8
 
 jobs:
   include:
@@ -10,4 +14,13 @@ jobs:
     before_script:
 
     script:
-    - sbt ++$TRAVIS_SCALA_VERSION test
+    - sbt coverage "++$TRAVIS_SCALA_VERSION test"
+
+    after_success:
+    - sbt ++$TRAVIS_SCALA_VERSION "++$TRAVIS_SCALA_VERSION coverageReport" coverageAggregate codacyCoverage
+
+
+cache:
+  directories:
+    - $HOME/.ivy2/cache
+    - $HOME/.sbt

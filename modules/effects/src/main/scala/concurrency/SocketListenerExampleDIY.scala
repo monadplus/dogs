@@ -37,10 +37,13 @@ object SocketListenerExampleDIY extends IOApp {
         _ <- line match {
               case Right(line) =>
                 line match {
-                  case "STOP" => stopFlag.put(())
-                  case "" => MonadError[F, Throwable].raiseError(new Exception("shine")) //Sync[F].unit
+                  case "STOP" => 
+                    stopFlag.put(())
+                  case "" => 
+                    Sync[F].unit
                   // throws exception
-                  case _ => Sync[F].delay { writer.write(line); writer.newLine(); writer.flush() } >> loop(reader, writer)
+                  case _ => 
+                    Sync[F].delay { writer.write(line); writer.newLine(); writer.flush() } >> loop(reader, writer)
                 }
               case Left(e) =>
                 for {
