@@ -6,6 +6,7 @@ lazy val catsEffectsVersion = "1.0.0"
 lazy val mouseVersion = "0.18"
 lazy val kittensVersion = "1.1.1"
 lazy val kindProjectorVersion = "0.9.8"
+lazy val monocleVersion = "1.5.0" // 1.5.0-cats based on cats 1.0.x
 lazy val scalaCheckVersion = "1.14.0"
 lazy val scalaTestVersion = "3.0.5"
 
@@ -16,10 +17,14 @@ lazy val commonDependencies = Seq(
   "org.typelevel" %% "cats-free" % catsVersion,
   "org.typelevel" %% "mouse" % mouseVersion, // convenient syntax
   "org.typelevel" %% "kittens" % kittensVersion, // automatic type class instances derivation
-  "org.scalacheck" %% "scalacheck" % scalaCheckVersion % Test,
-  "org.scalatest" %% "scalatest" % scalaTestVersion % Test,
-  "org.scalactic" %% "scalactic" % scalaTestVersion % Test
-)
+  "com.github.julien-truffaut" %%  "monocle-core"  % monocleVersion,
+  "com.github.julien-truffaut" %%  "monocle-macro" % monocleVersion,
+) ++ Seq(
+  "org.scalacheck" %% "scalacheck" % scalaCheckVersion,
+  "org.scalatest" %% "scalatest" % scalaTestVersion,
+  "org.scalactic" %% "scalactic" % scalaTestVersion,
+  "com.github.julien-truffaut" %%  "monocle-law" % monocleVersion
+).map(_  % Test)
 
 lazy val compilerFlags = Seq(
   scalacOptions ++= Seq(

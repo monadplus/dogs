@@ -58,12 +58,15 @@ object RaceForSuccess extends IOApp {
       )
       .map(provider)
 
-  // TODO    
-  // TODO    
-  // TODO    
-  // TODO    
+      // Using racePair, try folding/reducing the list: 
+      // race previous result with attempt, then, if we got a
+      //  successful (as in, Right) result from one, cancel the 
+      // other and return the result. Otherwise, fall back to 
+      // the second one, all while accumulating the errors. 
+      // The result should be something like Either[List[Throwable], A].
+      //  Then transform list into an exception and use .rethrow to lift it back to IO.    
   def run(args: List[String]) =
     for {
-      _ <- methods.parSequence
+      _ <- IO(println("TODO"))
     } yield ExitCode.Success
 }
