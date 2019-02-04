@@ -11,10 +11,6 @@ import cats.effect.{ExitCode, IOApp}
 // Bonus:
 // B1.- Avoid using runtime checking for CompositeException (including pattern matching on it).
 // B2.- If returned IO is cancelled, all in-flight requests should be properly cancelled as well.
-// B3.- Refactor function to allow generic effect type to be used, not only cats’ IO. (e.g. anything with Async or Concurrent instances).
-// B4.- Refactor function to allow generic container type to be used (e.g. anything with Traverse or NonEmptyTraverse instances).
-//       * Don’t use toList. If you have to work with lists anyway, might as well push the conversion responsibility to the caller.
-//       * If you want to support collections that might be empty (List, Vector, Option), the function must result in a failing IO/F when passed an empty value.
 
 object RaceForSuccess extends IOApp {
   import cats._, cats.data._, cats.implicits._
@@ -26,69 +22,69 @@ object RaceForSuccess extends IOApp {
 
   case class Data(source: String, body: String)
 
-  def provider(name: String)(implicit timer: Timer[IO]): IO[Data] = {
+  def provider[F[_]: Sync](name: String)(implicit timer: Timer[F]): F[Data] = {
     val proc = for {
-      dur <- IO { Random.nextInt(500) }
-      _   <- IO.sleep { (100 + dur).millis }
-      _   <- IO { if (Random.nextBoolean()) throw new Exception(s"Error in $name") }
-      txt <- IO { Random.alphanumeric.take(16).mkString }
+      dur <- Sync[F].delay { Random.nextInt(500) }
+      _   <- timer.sleep { (100 + dur).millis }
+      _   <- Sync[F].delay { if (Random.nextBoolean()) throw new Exception(s"$name") }
+      txt <- Sync[F].delay { Random.alphanumeric.take(16).mkString }
     } yield Data(name, txt)
 
     proc.guaranteeCase {
-      case ExitCase.Completed => IO { println(s"$name request finished") }
-      case ExitCase.Canceled  => IO { println(s"$name request canceled") }
-      case ExitCase.Error(ex) => IO { println(s"$name errored") }
+      case ExitCase.Completed => Sync[F].delay { println(s"$name request finished") }
+      case ExitCase.Canceled  => Sync[F].delay { println(s"$name request canceled") }
+      case ExitCase.Error(ex) => Sync[F].delay { println(s"$name errored") }
     }
   }
 
-  case class CompositeException(ex: NonEmptyList[Throwable]) extends Exception("All race candidates have failed")
+  case class CompositeException[R[_]: Reducible: Functor](ex: R[Throwable]) extends Exception("All race candidates have failed") {
+    def mkString: String = ex.map(_.getMessage).reduceLeft(_ + "," + _)
+  }
+
   object CompositeException {
-    def of(e: Throwable): CompositeException =
-      CompositeException(NonEmptyList.one(e))
-
-    implicit val semigroup: Semigroup[CompositeException] = new Semigroup[CompositeException] {
-      override def combine(x: CompositeException, y: CompositeException): CompositeException =
-        CompositeException(x.ex ::: y.ex)
+    implicit def semigroup[R[_]: Reducible: Functor](implicit ev: Semigroup[R[Throwable]]): Semigroup[CompositeException[R]] = new Semigroup[CompositeException[R]] {
+      override def combine(x: CompositeException[R], y: CompositeException[R]): CompositeException[R] =
+        CompositeException[R](x.ex |+| y.ex)
     }
   }
 
-  def toCompositeException(e: Throwable): CompositeException =
+  def toCompositeException[R[_]: Reducible : Applicative](e: Throwable): CompositeException[R] =
     e match {
-      case ce: CompositeException =>
-        ce
+      case ce@CompositeException(_) =>
+        ce.asInstanceOf[CompositeException[R]]
       case _ =>
-        CompositeException.of(e)
+        CompositeException[R](Applicative[R].pure(e))
     }
 
-  def waitResultOrCombineError[M[_], A](
+  def waitResultOrCombineError[M[_]: MonadError[?[_], Throwable], R[_]: Applicative : Reducible, A](
     fiber: Fiber[M, Either[Throwable, A]]
-  )(e: => Throwable)(implicit ev: MonadError[M, Throwable]): M[A] =
+  )(e: => CompositeException[R])(implicit ev: Semigroup[R[Throwable]]): M[A] =
     fiber.join.flatMap {
       case Right(resource) =>
         resource.pure[M]
       case Left(e2) =>
-        (Left((CompositeException.of(e) |+| CompositeException.of(e2))): Either[Throwable, A]).pure[M].rethrow
+        (Left((e |+| toCompositeException[R](e2))): Either[Throwable, A]).pure[M].rethrow
     }
 
   def cancelWith[F[_]: Functor, A, B](fiber: Fiber[F, A])(b: => B): F[B] =
     fiber.cancel.map(_ => b)
 
-  def raceToSuccess[A](ios: NonEmptyList[IO[A]]): IO[A] =
-    ios.tail.foldLeft(ios.head) {
+  def raceToSuccess[R[_]: Applicative: Reducible, F[_]: Concurrent, A](tfa: R[F[A]])(implicit ev: Semigroup[R[Throwable]]): F[A] =
+    Reducible[R].reduceLeft(tfa) {
       case (l, r) =>
-        IO.racePair(l.attempt, r.attempt).flatMap {
+        Concurrent[F].racePair(l.attempt, r.attempt).flatMap {
           case Left((Right(resource), r)) =>
             cancelWith(r)(resource)
           case Right((l, Right(resource))) =>
             cancelWith(l)(resource)
           case Left((Left(e), r)) =>
-            waitResultOrCombineError(r)(e)
+            waitResultOrCombineError(r)(toCompositeException[R](e))
           case Right((l, Left(e))) =>
-            waitResultOrCombineError(l)(e)
+            waitResultOrCombineError(l)(toCompositeException[R](e))
         }
     }
 
-  val methods: NonEmptyList[IO[Data]] =
+  def methods[F[_]: Sync: Timer]: NonEmptyList[F[Data]] =
     NonEmptyList
       .of(
         "memcached",
@@ -98,26 +94,22 @@ object RaceForSuccess extends IOApp {
         "hdd",
         "aws"
       )
-      .map(provider)
+      .map(provider[F])
 
-  def report(value: Either[CompositeException, Data]): IO[Unit] =
+  def report(value: Either[CompositeException[NonEmptyList], Data]): IO[Unit] =
     value match {
       case Left(e) =>
-        IO(println(e.ex.toList.map(_.getMessage).mkString(",")))
+        IO(println("Resources that have failed: " + e.mkString))
       case Right(Data(source, content)) =>
         IO(println(s"$source finished with content: $content"))
     }
 
-  // TODO: does not accumulate error properly
-  // TODO
-  // TODO
-  // TODO
-  // TODO
-  def run(args: List[String]) =
+  override def run(args: List[String]): IO[ExitCode] =
     for {
-      dataOrError <- raceToSuccess(methods)
+      dataOrError <- raceToSuccess(methods[IO])
                       .map(data => Right(data))
-                      .handleErrorWith(e => IO(Left(toCompositeException(e))))
+                      .handleErrorWith(e => IO(Left(toCompositeException[NonEmptyList](e))))
+
       _ <- report(dataOrError)
 
     } yield ExitCode.Success
