@@ -37,40 +37,40 @@ object RaceForSuccess extends IOApp {
     }
   }
 
-  case class CompositeException[R[_]: Reducible: Functor](ex: R[Throwable]) extends Exception("All race candidates have failed") {
-    def mkString: String = ex.map(_.getMessage).reduceLeft(_ + "," + _)
+  case class CompositeException(ex: NonEmptyList[Throwable]) extends Exception("All race candidates have failed") {
+    def mkString: String = ex.map(_.getMessage).toList.mkString(", ")
   }
 
   object CompositeException {
-    implicit def semigroup[R[_]: Reducible: Functor](implicit ev: Semigroup[R[Throwable]]): Semigroup[CompositeException[R]] = new Semigroup[CompositeException[R]] {
-      override def combine(x: CompositeException[R], y: CompositeException[R]): CompositeException[R] =
-        CompositeException[R](x.ex |+| y.ex)
+    implicit val semigroup: Semigroup[CompositeException] = new Semigroup[CompositeException] {
+      override def combine(x: CompositeException, y: CompositeException): CompositeException =
+        CompositeException(x.ex ::: y.ex)
     }
   }
 
-  def toCompositeException[R[_]: Reducible : Applicative](e: Throwable): CompositeException[R] =
+  def toCompositeException(e: Throwable): CompositeException =
     e match {
-      case ce@CompositeException(_) =>
-        ce.asInstanceOf[CompositeException[R]]
+      case compositeException: CompositeException =>
+        compositeException
       case _ =>
-        CompositeException[R](Applicative[R].pure(e))
+        CompositeException(NonEmptyList.one(e))
     }
 
-  def waitResultOrCombineError[M[_]: MonadError[?[_], Throwable], R[_]: Applicative : Reducible, A](
+  def waitResultOrCombineError[M[_]: MonadError[?[_], Throwable], A](
     fiber: Fiber[M, Either[Throwable, A]]
-  )(e: => CompositeException[R])(implicit ev: Semigroup[R[Throwable]]): M[A] =
+  )(e: => CompositeException): M[A] =
     fiber.join.flatMap {
       case Right(resource) =>
         resource.pure[M]
       case Left(e2) =>
-        (Left((e |+| toCompositeException[R](e2))): Either[Throwable, A]).pure[M].rethrow
+        (Left((e |+| toCompositeException(e2))): Either[Throwable, A]).pure[M].rethrow
     }
 
   def cancelWith[F[_]: Functor, A, B](fiber: Fiber[F, A])(b: => B): F[B] =
     fiber.cancel.map(_ => b)
 
-  def raceToSuccess[R[_]: Applicative: Reducible, F[_]: Concurrent, A](tfa: R[F[A]])(implicit ev: Semigroup[R[Throwable]]): F[A] =
-    Reducible[R].reduceLeft(tfa) {
+  def raceToSuccess[T[_]: Reducible, F[_]: Concurrent, A](tfa: T[F[A]]): F[A] =
+    Reducible[T].reduceLeft(tfa) {
       case (l, r) =>
         Concurrent[F].racePair(l.attempt, r.attempt).flatMap {
           case Left((Right(resource), r)) =>
@@ -78,9 +78,9 @@ object RaceForSuccess extends IOApp {
           case Right((l, Right(resource))) =>
             cancelWith(l)(resource)
           case Left((Left(e), r)) =>
-            waitResultOrCombineError(r)(toCompositeException[R](e))
+            waitResultOrCombineError(r)(toCompositeException(e))
           case Right((l, Left(e))) =>
-            waitResultOrCombineError(l)(toCompositeException[R](e))
+            waitResultOrCombineError(l)(toCompositeException(e))
         }
     }
 
@@ -96,7 +96,7 @@ object RaceForSuccess extends IOApp {
       )
       .map(provider[F])
 
-  def report(value: Either[CompositeException[NonEmptyList], Data]): IO[Unit] =
+  def report(value: Either[CompositeException, Data]): IO[Unit] =
     value match {
       case Left(e) =>
         IO(println("Resources that have failed: " + e.mkString))
@@ -108,7 +108,7 @@ object RaceForSuccess extends IOApp {
     for {
       dataOrError <- raceToSuccess(methods[IO])
                       .map(data => Right(data))
-                      .handleErrorWith(e => IO(Left(toCompositeException[NonEmptyList](e))))
+                      .handleErrorWith(e => IO(Left(toCompositeException(e))))
 
       _ <- report(dataOrError)
 
