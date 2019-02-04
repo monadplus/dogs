@@ -24,7 +24,7 @@ object RaceForSuccess extends IOApp {
   def provider[F[_]: Sync](name: String)(implicit timer: Timer[F]): F[Data] = {
     val proc = for {
       dur <- Sync[F].delay { Random.nextInt(500) }
-      _   <- timer.sleep { (300 + dur).millis }
+      _   <- timer.sleep { (100 + dur).millis }
       _   <- Sync[F].delay { if (Random.nextBoolean()) throw new Exception(s"$name") }
       txt <- Sync[F].delay { Random.alphanumeric.take(16).mkString }
     } yield Data(name, txt)
@@ -68,36 +68,20 @@ object RaceForSuccess extends IOApp {
   def cancelWith[F[_]: Functor, A, B](fiber: Fiber[F, A])(b: => B): F[B] =
     fiber.cancel.map(_ => b)
 
-  def raceToSuccess[T[_]: Reducible, F[_]: ConcurrentEffect, A](tfa: T[F[A]])(implicit ec: ExecutionContext): F[A] = {
-    def parReduce(isActive: AtomicBoolean): F[A] =
-      Reducible[T].reduceLeft(tfa) {
-        case (l, r) =>
-        if (!isActive.get) Concurrent[F].raiseError[A](new Exception("Cancelled"))
-        else {
-          Concurrent[F].racePair(l.attempt, r.attempt).flatMap {
-            case Left((Right(resource), r)) =>
-              cancelWith(r)(resource)
-            case Right((l, Right(resource))) =>
-              cancelWith(l)(resource)
-            case Left((Left(e), r)) =>
-              waitResultOrCombineError(r)(toCompositeException(e))
-            case Right((l, Left(e))) =>
-              waitResultOrCombineError(l)(toCompositeException(e))
-          }
+  def raceToSuccess[T[_]: Reducible, F[_]: Concurrent, A](tfa: T[F[A]]): F[A] =
+    Reducible[T].reduceLeft(tfa) {
+      case (l, r) =>
+        Concurrent[F].racePair(l.attempt, r.attempt).flatMap {
+          case Left((Right(resource), r)) =>
+            cancelWith(r)(resource)
+          case Right((l, Right(resource))) =>
+            cancelWith(l)(resource)
+          case Left((Left(e), r)) =>
+            waitResultOrCombineError(r)(toCompositeException(e))
+          case Right((l, Left(e))) =>
+            waitResultOrCombineError(l)(toCompositeException(e))
         }
-      }
-
-    Concurrent[F].cancelable[A] { cb =>
-      val isActive = new AtomicBoolean(true)
-
-      ec.execute(() => {
-        val res = parReduce(isActive).attempt.toIO.unsafeRunSync
-        cb(res)
-      })
-
-      Sync[F].delay(isActive.set(false))
     }
-  }
 
   def methods[F[_]: Sync: Timer]: NonEmptyList[F[Data]] =
     NonEmptyList
@@ -119,22 +103,15 @@ object RaceForSuccess extends IOApp {
         IO(println(s"$source finished with content: $content"))
     }
 
-  override def run(args: List[String]): IO[ExitCode] = {
-    val pool: ExecutorService =
-      Executors.newCachedThreadPool()
-    implicit val ec: ExecutionContext =
-      ExecutionContext.fromExecutorService(pool)
-
+  override def run(args: List[String]): IO[ExitCode] =
     for {
       fiber <- raceToSuccess(methods[IO])
                 .map(data => Right(data))
                 .handleErrorWith(e => IO(Left(toCompositeException(e))))
                 .start
-      // _ <- IO.sleep(150.millis)
+      // _ <- IO.sleep(100.millis)
       // _ <- fiber.cancel
-      _ <- IO(pool.shutdown())
       data <- fiber.join
-      _ <- report(data) 
+      _    <- report(data)
     } yield ExitCode.Success
-  }
 }
