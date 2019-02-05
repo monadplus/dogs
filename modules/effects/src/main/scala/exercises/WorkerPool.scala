@@ -16,68 +16,67 @@ object WorkerPoolExercise extends IOApp {
   import scala.concurrent.duration._
   import scala.util._
 
-  type Id = Int
-  final case class Worker[F[_], A, B](id: Int, run: A => F[B])
+  type Id                 = Int
+  type Worker[F[_], A, B] = A => F[B]
 
-  def mkWorker[F[_]: Concurrent](implicit timer: Timer[F]): F[Id => Worker[F, Int, Int]] =
-    Ref[F].of(0).map { counter => (id: Id) =>
-      {
-        def simulateWork: F[Unit] =
-          Sync[F].delay(50 + Random.nextInt(450)).map(_.millis).flatMap(timer.sleep)
+  def mkWorker[F[_]: Concurrent](implicit timer: Timer[F]): F[Worker[F, Int, Int]] =
+    Ref[F].of(0).map { counter =>
+      def simulateWork: F[Unit] =
+        Sync[F].delay(50 + Random.nextInt(450)).map(_.millis).flatMap(timer.sleep)
 
-        def report: F[Unit] =
-          counter.get.flatMap(i => Sync[F].delay(println(s"Total processed by $id: $i")))
+      def report: F[Unit] =
+        counter.get.flatMap(i => Sync[F].delay(println(s"Total processed $i")))
 
-        val f: Int => F[Int] =
-          x =>
-            simulateWork >>
-              counter.update(_ + 1) >>
-              report >>
-              Applicative[F].pure(x + 1)
+      val f: Int => F[Int] =
+        x =>
+          simulateWork >>
+            counter.update(_ + 1) >>
+            report >>
+            Applicative[F].pure(x + 1)
 
-        Worker(id, f)
-      }
+      f
     }
 
   trait WorkerPool[F[_], A, B] {
     def exec(a: A): F[B]
-    def addWorker(implicit timer: Timer[F]): F[Unit]
     def removeAllWorkers: F[Unit]
+    def addWorker(w: Worker[F, A, B]): F[Unit]
   }
 
   object WorkerPool {
-    def of[F[_]: Concurrent](fs: List[Id => Worker[F, Int, Int]]): F[WorkerPool[F, Int, Int]] =
+    def of[F[_]: Concurrent, A, B](ws: List[Worker[F, A, B]]): F[WorkerPool[F, A, B]] =
       for {
         ids          <- Ref.of[F, Int](0)
-        workersQueue <- MVar[F].empty[Worker[F, Int, Int]]
-        workers      <- fs.traverse(f => ids.modify(id => (id + 1) -> f(id)))
-        _            <- workers.traverse(workersQueue.put(_).start.void)
-        active       <- Ref.of[F, Set[Id]](workers.map(_.id).toSet)
-      } yield WorkerPoolImpl[F](workersQueue, active, ids)
+        workersQueue <- MVar[F].empty[(Id, Worker[F, A, B])]
+        active       <- Ref.of[F, Set[Id]](Set.empty)
+        _ <- ws.traverse { w =>
+              ids.modify(id => (id + 1) -> active.update(_ + id) *> workersQueue.put(id -> w).start.void).flatten
+            }
+      } yield WorkerPoolImpl(workersQueue, active, ids)
 
-    private case class WorkerPoolImpl[F[_]: Concurrent](
-      workersQueue: MVar[F, Worker[F, Int, Int]],
+    private case class WorkerPoolImpl[F[_]: Concurrent, A, B](
+      workersQueue: MVar[F, (Id, Worker[F, A, B])],
       active: Ref[F, Set[Id]],
       ids: Ref[F, Int]
-    ) extends WorkerPool[F, Int, Int] {
+    ) extends WorkerPool[F, A, B] {
 
-      private def re_enqueue(w: Worker[F, Int, Int]): F[Unit] =
+      private def re_enqueue(id: Id, w: Worker[F, A, B]): F[Unit] =
         for {
-          ids <- active.get
-          _   <- workersQueue.put(w).start.whenA(ids contains w.id)
+          activeIds <- active.get
+          _         <- workersQueue.put(id -> w).start.whenA(activeIds contains id)
         } yield ()
 
-      override def exec(a: Int): F[Int] =
+      override def exec(a: A): F[B] =
         for {
-          worker <- workersQueue.take
-          result <- worker.run(a).guarantee(re_enqueue(worker))
+          (id, worker) <- workersQueue.take
+          result       <- worker(a).guarantee(re_enqueue(id, worker))
         } yield result
 
-      override def addWorker(implicit timer: Timer[F]): F[Unit] =
+      override def addWorker(w: Worker[F, A, B]): F[Unit] =
         for {
-          w <- ids.modify(id => (id + 1) -> mkWorker.map(_(id))).flatten
-          _ <- workersQueue.put(w).start.void
-          _ <- active.update(_ + w.id)
+          id <- ids.modify(id => (id + 1) -> id)
+          _  <- workersQueue.put(id -> w).start.void
+          _  <- active.update(_ + id)
         } yield ()
 
       override def removeAllWorkers: F[Unit] =
@@ -98,8 +97,8 @@ object WorkerPoolExercise extends IOApp {
       pool     <- testPool[IO](nWorkers)
       _        <- pool.removeAllWorkers
       fiber    <- pool.exec(0 /*ignored*/ ).replicateA(20).start
-      _        <- pool.addWorker
-      _        <- pool.addWorker
+      w        <- mkWorker[IO]
+      _        <- pool.addWorker(w)
       _        <- fiber.join
     } yield ExitCode.Success
 }

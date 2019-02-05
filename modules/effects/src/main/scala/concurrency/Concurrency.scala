@@ -30,23 +30,22 @@ object Concurrency extends App {
 //    def modify[B](f: A => (A, B)): F[(A, B)]
   }
 
-  class IORef[A](ar: AtomicReference[A]) extends OwnRef[IO, A] {
-    override def get: IO[A] = IO(ar.get())
-    override def set(a: A): IO[Unit] = IO(ar.set(a))
-    override def update(f: A => A): IO[Unit] = {
-      @tailrec
+  class OwnRefImpl[F[_]: Sync, A](ar: AtomicReference[A]) extends OwnRef[F, A] {
+    override def get: F[A] = Sync[F].delay(ar.get)
+    override def set(a: A): F[Unit] = Sync[F].delay(ar.set(a))
+    override def update(f: A => A): F[Unit] = {
       def loop(): Unit = {
-        val oldRef = ar.get()
+        val oldRef = ar.get
         val updated = f(oldRef)
         if (ar.compareAndSet(oldRef, updated)) () else loop()
       }
-      IO(loop())
+      Sync[F].delay(loop())
     }
   }
 
   object IORef {
     def create[A](v: A): IO[OwnRef[IO, A]] =
-      IO.delay(new IORef(new AtomicReference[A](v)))
+      IO.delay(new OwnRefImpl[IO, A](new AtomicReference[A](v)))
   }
 
   // ------------------------------
