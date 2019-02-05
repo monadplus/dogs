@@ -30,7 +30,6 @@ object CopyFiles {
       }
     }
 
-  // .bracketCase(...): could work but is a lot of boilerplate coded
   private def inputOutputStreams(in: File,
                                  out: File,
                                  semaphore: Semaphore[IO]): Resource[IO, (InputStream, OutputStream)] =
@@ -50,7 +49,7 @@ object CopyFiles {
 
   private def transfer(origin: InputStream, destination: OutputStream): IO[Long] =
     for {
-      buffer <- IO(new Array[Byte](1024 * 10)) // Allocated only when the IO is evaluated
+      buffer <- IO(new Array[Byte](1024 * 10))
       total <- transmit(origin, destination, buffer, 0L)
     } yield total
 
@@ -61,8 +60,6 @@ object CopyFiles {
     for {
       semaphore <- Semaphore[IO](1)
       count <- inputOutputStreams(origin, destination, semaphore).use {
-        // The order is important !
-        //   (put withPermit outside inputOutputStreams and see the effects)
         case (in, out) =>
           semaphore.withPermit(transfer(in, out))
       }
@@ -79,8 +76,7 @@ object CopyFiles2 {
 
   type Semaphore[F[_]] = MVar[F, Token]
 
-  // TODO: compilers marks it as unused
-  implicit def MVarSyntax[F[_]](semaphore: Semaphore[F]) /*(implicit bracket: Bracket[F, Throwable])*/: MVarOps[F] =
+  implicit def MVarSyntax[F[_]](semaphore: Semaphore[F]): MVarOps[F] =
     new MVarOps[F](semaphore)
 
   final class MVarOps[F[_]](val self: Semaphore[F]) extends AnyVal {
@@ -121,7 +117,7 @@ object CopyFiles2 {
 
   private def transfer[F[_]: Sync](origin: InputStream, destination: OutputStream): F[Long] =
     for {
-      buffer <- Sync[F].delay(new Array[Byte](1024 * 10)) // Allocated only when the IO is evaluated
+      buffer <- Sync[F].delay(new Array[Byte](1024 * 10))
       total <- transmit(origin, destination, buffer, 0L)
     } yield total
 
@@ -129,8 +125,6 @@ object CopyFiles2 {
     for {
       semaphore <- MVar[F].empty[Token]
       count <- inputOutputStreams(origin, destination, semaphore).use {
-        // The order is important !
-        //   (put withPermit outside inputOutputStreams and see the effects)
         case (in, out) =>
           semaphore.withPermit(transfer(in, out))
       }
