@@ -15,7 +15,7 @@ import cats.effect.concurrent.{Deferred, MVar, Ref}
 import cats.implicits._
 import cats.effect.implicits._
 import cats.effect.ExitCase.{Canceled, Completed, Error}
-import scala.util._ // Try 
+import scala.util._ // Try
 
 object CatsIO extends App {
 
@@ -27,26 +27,23 @@ object CatsIO extends App {
 
   type Callback[-A] = Either[Throwable, A] => Unit
 
-  // def asyncF[A](k: (Either[Throwable, A] => Unit) => IO[Unit]): IO[A] =
-  class PurePromise[F[_], A](ref: Ref[F, Either[List[Callback[A]], A]])(implicit F: Async[F]) {
-    def get: F[A] = F.asyncF { cb =>
+  class PurePromise[F[_]: Async, A](ref: Ref[F, Either[List[Callback[A]], A]]) {
+    def get: F[A] = Async[F].asyncF { cb =>
       ref.modify {
-        case current @ Right(value) =>
-          (current, F.delay(cb(Right(value))))
+        case r @ Right(value) =>
+          r -> Sync[F].delay(cb(Right(value)))
         case Left(waiting) =>
-          (Left(cb :: waiting), F.unit)
+          Left(cb :: waiting) -> Sync[F].unit
       }
     }
 
     def complete(value: A): F[Unit] =
-      F.flatten(
-        ref.modify {
-          case current @ Right(_) =>
-            (current, F.unit)
-          case Left(waiting) =>
-            (Right(value), F.delay(waiting.foreach(cb => cb(Right(value)))))
-        }
-      )
+      (ref.modify {
+        case current @ Right(_) =>
+          (current, ().pure[F])
+        case Left(waiting) =>
+          (Right(value), Sync[F].delay(waiting.foreach(cb => cb(Right(value)))))
+      }).flatten
   }
 
   // IO is trampolined
@@ -77,12 +74,6 @@ object CatsIO extends App {
     res <- sleepDIY(1.seconds) *> IO.pure(10)
     _   <- IO { println("After") }
   } yield res
-
-  //  Before
-  //  After
-  //  The result is 10
-  //  Running
-  //println(s"The result is ${p.unsafeRunSync()}")
 
   // --------------------------------------------------
   // --------------------------------------------------
@@ -160,7 +151,7 @@ object CatsIO extends App {
   }
 
   def readFile0(file: File)(implicit ec: ExecutionContext): IO[String] =
-    // TODO: this won't work as IO is uncancelable 
+    // TODO: this won't work as IO is uncancelable
     // IO(new AtomicBoolean(true)).bracketCase { isActive =>
     //   IO.async[String] { cb =>
     //     ec.execute(new Runnable() {
@@ -168,7 +159,7 @@ object CatsIO extends App {
     //         cb(Try(unsafeFileToString(file, isActive)).toEither)
     //     })
     //   }
-    // } { (isActive, exit) => 
+    // } { (isActive, exit) =>
     //   exit match {
     //     case Completed => IO("completed") *>IO.unit
     //     case Error(_) | Canceled => IO("canceled") *> IO(isActive.set(false))
@@ -481,9 +472,11 @@ object CatsIO extends App {
 
   // Error Handling
 
-  def exponentialBackOff[M[_], A](ma: M[A])(maxRetries: Int)(implicit
-                                                             m: ApplicativeError[M, Throwable],
-                                                             timer: Timer[M]): M[A] = {
+  def exponentialBackOff[M[_], A](ma: M[A])(maxRetries: Int)(
+    implicit
+    m: ApplicativeError[M, Throwable],
+    timer: Timer[M]
+  ): M[A] = {
     def loop(retries: Int)(delay: FiniteDuration): M[A] =
       ma.handleErrorWith { error =>
         if (retries > 0)
