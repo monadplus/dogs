@@ -1,4 +1,4 @@
-package monocle_test
+package mononocle
 
 // A Lens is an optic used to zoom inside a Product,
 //   e.g. case class, Tuple, HList or even Map.

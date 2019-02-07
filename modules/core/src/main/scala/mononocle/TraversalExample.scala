@@ -1,4 +1,4 @@
-package monocle_test
+package mononocle
 
 /**
  *  Generalisation of Optional to several targets (Traverse)
@@ -43,7 +43,7 @@ object TraversalExample {
     }
 
   val m = Map(1 -> "one", 2 -> "two", 3 -> "three", 4 -> "Four")
-  filterKey(_ % 2).modify(_.toUpperCase)(m) // Map(1 -> one, 2 -> TWO, 3 -> three, 4 -> FOUR)
+  filterKey[Int, String](_ % 2 == 0).modify(_.toUpperCase)(m) // Map(1 -> one, 2 -> TWO, 3 -> three, 4 -> FOUR)
 }
 
 object TraversalLaws {

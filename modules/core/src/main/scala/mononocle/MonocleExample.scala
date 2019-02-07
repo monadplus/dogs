@@ -1,4 +1,4 @@
-package monocle_test
+package mononocle
 
 object MonocleExample extends App {
   case class Street(number: Int, name: String)
@@ -83,7 +83,7 @@ object MonocleExample extends App {
   val departments = GenLens[University](_.departments)
 
   import monocle.function.At.at // to get at Lens
-  import monocle.std.map._      // to get Map instance for At
+  import monocle.std.map._ // to get Map instance for At
 
   println(departments.composeLens(at("History")).set(None)(uni))
 
@@ -101,7 +101,7 @@ object MonocleExample extends App {
   val salary    = GenLens[Lecturer](_.salary)
 
   import monocle.function.all._ // to get each and other typeclass based optics such as at or headOption
-  import monocle.Traversal      // zooms into all elements of a container (e.g. Map Vector List)
+  import monocle.Traversal // zooms into all elements of a container (e.g. Map Vector List)
 
   val allLecturers: Traversal[University, Lecturer] =
     departments.composeTraversal(each).composeLens(lecturers).composeTraversal(each)

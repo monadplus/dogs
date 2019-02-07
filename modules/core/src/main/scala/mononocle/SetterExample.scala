@@ -1,4 +1,4 @@
-package monocle_test
+package mononocle
 
 /**
  * A [[monocle.PSetter]] is a generalisation of Functor map:

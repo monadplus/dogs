@@ -1,4 +1,4 @@
-package monocle_test
+package mononocle
 
 /**
  *  * An [[monocle.Iso]] defines an isomorphism between a type S and A
