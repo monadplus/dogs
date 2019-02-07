@@ -2,9 +2,13 @@ package mononocle.typeclasses
 
 import monocle.Lens
 import monocle.function.At
+import monocle.function.At._
+import monocle.macros.GenLens
 
 /**
  * At is a type class that defines a Lens from an S to an A at an index I.
+ * Can add, remove and modify an index
+ * Use Index for a less powerful version than At
  */
 object atExample extends App {
   type DayOfWeek = String
@@ -16,9 +20,9 @@ object atExample extends App {
       "Tuesday" -> Cooker("Antonio")
     )
   )
-  val cookerAt = At[Restaurant, DayOfWeek, Cooker](d => office => office.cookers(d))(
-    d => e => o => o.copy(cookers = o.cookers ++ Map(d -> e))
-  )
-  val setCookerMonday: Lens[Restaurant, Cooker] = cookerAt.at("Monday")
-  println(setCookerMonday.set(Cooker("Jose"))(restaurant))
+
+  // Add
+  GenLens[Restaurant](_.cookers).composeLens(at("Wednesday")).set(Some(Cooker("Paco")))(restaurant)
+  // Remove
+  GenLens[Restaurant](_.cookers).composeLens(at("Wednesday")).set(None)(restaurant)
 }
