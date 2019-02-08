@@ -1,6 +1,6 @@
 package exercises
 
-import cats.effect.{ExitCode, IOApp}
+import cats.effect.IOApp
 
 // Requirements:
 // 1.- The function should run requests in parallel.
@@ -24,8 +24,8 @@ object RaceForSuccess extends IOApp {
   def provider[F[_]: Sync](name: String)(implicit timer: Timer[F]): F[Data] = {
     val proc = for {
       dur <- Sync[F].delay { Random.nextInt(500) }
-      _   <- timer.sleep { (100 + dur).millis }
-      _   <- Sync[F].delay { if (Random.nextBoolean()) throw new Exception(s"$name") }
+      _ <- timer.sleep { (100 + dur).millis }
+      _ <- Sync[F].delay { if (Random.nextBoolean()) throw new Exception(s"$name") }
       txt <- Sync[F].delay { Random.alphanumeric.take(16).mkString }
     } yield Data(name, txt)
 
@@ -36,15 +36,10 @@ object RaceForSuccess extends IOApp {
     }
   }
 
-  case class CompositeException(ex: NonEmptyList[Throwable]) extends Exception("All race candidates have failed") {
+  case class CompositeException(ex: NonEmptyList[Throwable])
+      extends Exception("All race candidates have failed") {
     def mkString: String = ex.map(_.getMessage).toList.mkString(", ")
-  }
-
-  object CompositeException {
-    implicit val semigroup: Semigroup[CompositeException] = new Semigroup[CompositeException] {
-      override def combine(x: CompositeException, y: CompositeException): CompositeException =
-        CompositeException(x.ex ::: y.ex)
-    }
+    def and(e: Throwable): CompositeException = CompositeException(ex :+ e)
   }
 
   def toCompositeException(e: Throwable): CompositeException =
@@ -56,17 +51,17 @@ object RaceForSuccess extends IOApp {
     }
 
   def waitResultOrCombineError[M[_]: MonadError[?[_], Throwable], A](
-    fiber: Fiber[M, Either[Throwable, A]]
-  )(e: => CompositeException): M[A] =
+      fiber: Fiber[M, Either[Throwable, A]]
+  )(ce: => CompositeException): M[A] =
     fiber.join.flatMap {
       case Right(resource) =>
         resource.pure[M]
-      case Left(e2) =>
-        (Left((e |+| toCompositeException(e2))): Either[Throwable, A]).pure[M].rethrow
+      case Left(e) =>
+        (ce.and(e): Throwable).raiseError[M, A]
     }
 
   def cancelWith[F[_]: Functor, A, B](fiber: Fiber[F, A])(b: => B): F[B] =
-    fiber.cancel.map(_ => b)
+    fiber.cancel.as(b)
 
   def raceToSuccess[T[_]: Reducible, F[_]: Concurrent, A](tfa: T[F[A]]): F[A] =
     Reducible[T].reduceLeft(tfa) {
@@ -106,12 +101,9 @@ object RaceForSuccess extends IOApp {
   override def run(args: List[String]): IO[ExitCode] =
     for {
       fiber <- raceToSuccess(methods[IO])
-                .map(data => Right(data))
-                .handleErrorWith(e => IO(Left(toCompositeException(e))))
-                .start
-      // _ <- IO.sleep(100.millis)
-      // _ <- fiber.cancel
+        .redeem(toCompositeException(_).asLeft, _.asRight)
+        .start
       data <- fiber.join
-      _    <- report(data)
+      _ <- report(data)
     } yield ExitCode.Success
 }
