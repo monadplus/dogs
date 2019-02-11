@@ -1,4 +1,7 @@
-resolvers in Global += Resolver.sonatypeRepo("releases") // "Sonatype OSS Snapshots" at "https://oss.sonatype.org/content/repositories/snapshots"
+resolvers in Global ++= Seq(
+  Resolver.sonatypeRepo("releases"),
+  Resolver.bintrayRepo("io-monadplus", "maven")
+)
 
 // Library versions all in one place, for convenience and sanity.
 lazy val catsVersion = "1.4.0"
@@ -9,7 +12,6 @@ lazy val kindProjectorVersion = "0.9.8"
 lazy val monocleVersion = "1.5.0" // 1.5.0-cats based on cats 1.0.x
 lazy val scalaCheckVersion = "1.14.0"
 lazy val scalaTestVersion = "3.0.5"
-
 lazy val commonDependencies = Seq(
   "org.typelevel" %% "cats-core" % catsVersion, // required
   "org.typelevel" %% "cats-macros" % catsVersion, // required by core
@@ -19,6 +21,7 @@ lazy val commonDependencies = Seq(
   "org.typelevel" %% "kittens" % kittensVersion, // automatic type class instances derivation
   "com.github.julien-truffaut" %%  "monocle-core"  % monocleVersion,
   "com.github.julien-truffaut" %%  "monocle-macro" % monocleVersion,
+  "io.monadplus" %% "equality-core" % "0.1"
 ) ++ Seq(
   "org.scalacheck" %% "scalacheck" % scalaCheckVersion,
   "org.scalatest" %% "scalatest" % scalaTestVersion,
