@@ -1,6 +1,7 @@
 import org.scalatest._
-import core.all._
+import equality.all._
 import org.scalatest.exceptions.TestFailedException
+
 class EqualityCoreSpec extends FreeSpec {
 
   sealed trait XY
@@ -14,12 +15,12 @@ class EqualityCoreSpec extends FreeSpec {
       val a2 = A(X(10), 11L)
       val a3 = A(Y(false), 10L)
 
-      a1 ===! a1
+      a1 ==== a1
       intercept[TestFailedException] {
-        a1 ===! a2
+        a1 ==== a2
       }
       intercept[TestFailedException] {
-        a1 ===! a3
+        a1 ==== a3
       }
     }
   }

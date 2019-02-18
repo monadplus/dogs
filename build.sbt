@@ -19,9 +19,10 @@ lazy val commonDependencies = Seq(
   "org.typelevel" %% "cats-free" % catsVersion,
   "org.typelevel" %% "mouse" % mouseVersion, // convenient syntax
   "org.typelevel" %% "kittens" % kittensVersion, // automatic type class instances derivation
+  "org.typelevel" %% "cats-effect" % catsEffectsVersion,
   "com.github.julien-truffaut" %%  "monocle-core"  % monocleVersion,
   "com.github.julien-truffaut" %%  "monocle-macro" % monocleVersion,
-  "io.monadplus" %% "equality-core" % "0.1"
+  "io.monadplus" %% "equality-core" % "0.0.1"
 ) ++ Seq(
   "org.scalacheck" %% "scalacheck" % scalaCheckVersion,
   "org.scalatest" %% "scalatest" % scalaTestVersion,
@@ -93,9 +94,6 @@ lazy val commonSettings: Seq[Def.Setting[_]] = Seq(
   parallelExecution in Test := true,
   fork in Test := true,
   libraryDependencies ++= commonDependencies,
-  // coverageMinimum := 70,
-  // coverageFailOnMinimum := false,
-  // coverageHighlighting := true,
   addCompilerPlugin("org.spire-math" %% "kind-projector" % kindProjectorVersion),
   addCompilerPlugin("com.olegpy" %% "better-monadic-for" % "0.3.0-M4")
 ) ++ compilerFlags
@@ -115,9 +113,6 @@ lazy val effects = project
   .settings(
     name := "cats-effects",
     description := "Experimenting with cats-effects",
-    libraryDependencies ++= Seq(
-      "org.typelevel" %% "cats-effect" % catsEffectsVersion,
-    ),
     initialCommands in console := "import cats._, cats.data._, cats.implicits._, cats.effects._, cats.effects.implicits._"
   )
   .dependsOn(core)
