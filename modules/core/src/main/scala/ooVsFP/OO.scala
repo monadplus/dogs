@@ -1,10 +1,10 @@
-import scala.io.StdIn.readLine
+package ooVsFP
 
 object OO {
   def main(args: Array[String]): Unit = {
     println("What is your name?")
 
-    val name = readLine()
+    val name = scala.io.StdIn.readLine()
 
     println("Hello, " + name + ", welcome to the game!")
 
@@ -15,14 +15,14 @@ object OO {
 
       println("Dear " + name + ", please guess a number from 1 to 5:")
 
-      val guess = readLine().toInt
+      val guess = scala.io.StdIn.readLine().toInt
 
       if (guess == num) println("You guessed right, " + name + "!")
       else println("You guessed wrong, " + name + "! The number was: " + num)
 
       println("Do you want to continue, " + name + "?")
 
-      readLine() match {
+      scala.io.StdIn.readLine() match {
         case "y" => exec = true
         case "n" => exec = false
       }

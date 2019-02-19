@@ -1,4 +1,5 @@
-import scala.language.higherKinds
+package ooVsFP
+
 import scala.util.Try
 
 object FP extends App {

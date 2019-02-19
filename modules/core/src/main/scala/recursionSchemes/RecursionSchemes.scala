@@ -1,3 +1,5 @@
+package recursionSchemes
+
 import cats.Functor
 import cats.implicits._
 
