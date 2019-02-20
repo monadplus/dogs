@@ -1,5 +1,6 @@
 package data
 
+import cats.arrow.FunctionK
 import cats.{Show, ~>}
 import cats.effect.IO
 
@@ -87,16 +88,16 @@ object FreeMonadExample extends App {
   type KVStoreState[A] = State[Map[String, Any], A]
 
   /*_*/
-  object compiler extends (Algebra ~> KVStoreState) {
-    override def apply[A](fa: Algebra[A]): KVStoreState[A] = fa match {
-      case Put(k, v) =>
-        State.modify[Map[String, Any]](_ + (k -> v))
-      case Get(k) =>
-        State.inspect[Map[String, Any], Option[Any]](_.get(k))
-      case Delete(k) =>
-        State.modify[Map[String, Any]](_ - k)
-    }
+
+  val compiler = λ[Algebra ~> KVStoreState] {
+    case Put(k, v) =>
+      State.modify[Map[String, Any]](_ + (k -> v))
+    case Get(k) =>
+      State.inspect[Map[String, Any], Option[Any]](_.get(k))
+    case Delete(k) =>
+      State.modify[Map[String, Any]](_ - k)
   }
+
   /*_*/
 
   // 6.- Stack-safety
