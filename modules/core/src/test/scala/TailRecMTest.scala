@@ -1,9 +1,7 @@
-package monad
-
 import org.scalatest.FunSpec
+import tailrec.TailRecM._
 
 class TailRecMTest extends FunSpec {
-  import TailRecM._
 
 //  def showRes(w: Writer[Log, Long]): Unit = {
 //    val res = w.run
@@ -39,7 +37,7 @@ class TailRecMTest extends FunSpec {
   }
 
   describe("DIY tail recursive writer") {
-    import TailRecMDIY._
+    import tailrec.TailRecMDIY._
 
     it("should compute small numbers") {
       assert(powWriter4(3L, 5L).run._2 === 243L)

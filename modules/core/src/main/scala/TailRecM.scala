@@ -1,3 +1,5 @@
+package tailrec
+
 import cats._
 import cats.data.Writer
 import cats.implicits._
