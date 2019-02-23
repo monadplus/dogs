@@ -1,8 +1,7 @@
-package data
+package free
 
-import cats.arrow.FunctionK
-import cats.{Show, ~>}
 import cats.effect.IO
+import cats.{Show, ~>}
 
 object FreeMonadExample extends App {
 
@@ -111,6 +110,7 @@ object FreeMonadExample extends App {
   import cats.data.EitherK
   import cats.free.Free
   import cats.{Id, InjectK, ~>}
+
   import scala.collection.mutable.ListBuffer
 
   sealed trait Interact[A]
@@ -142,7 +142,8 @@ object FreeMonadExample extends App {
 
   // Program
   def catsProgram(implicit I: Interacts[CatsApp], D: DataSource[CatsApp]): Free[CatsApp, Unit] = {
-    import I._, D._
+    import D._
+    import I._
     for {
       cat <- ask("What's the kitty's name?")
       _ <- addCat(cat)

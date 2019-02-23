@@ -1,3 +1,0 @@
-All these examples are from Runar Bjarnason' talks.
-All of them are quite incomplete ideas.
-To understand how a freeMonad works go to data.FreeMonadExample

@@ -1,5 +1,3 @@
-package reader
-
 // Source: https://www.youtube.com/watch?v=ZasXwtTRkio
 object ReaderDIY extends App {
   case class Reader[A, B](run: A => B) {

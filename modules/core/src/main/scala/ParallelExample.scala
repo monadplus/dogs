@@ -1,5 +1,3 @@
-package parallel
-
 /**
   *  Data types that are actually of the same structure, but instead have instances of Applicative. E.g. Either and Validated.
   *  Use both in conjunction with each other.

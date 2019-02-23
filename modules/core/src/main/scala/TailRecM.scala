@@ -1,10 +1,8 @@
-package monad
-
 import cats._
 import cats.data.Writer
+import cats.implicits._
 
 import scala.annotation.tailrec
-import cats.implicits._
 
 object TailRecM extends App {
 

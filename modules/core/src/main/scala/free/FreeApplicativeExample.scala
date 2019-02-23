@@ -1,11 +1,10 @@
-package data
-
+package free
 import cats.arrow.FunctionK
-import cats.data.{Const, Tuple2K, Writer}
-import cats.~>
-import cats.implicits._
+import cats.data.{Const, Tuple2K}
 import cats.free.FreeApplicative
 import cats.free.FreeApplicative.lift
+import cats.~>
+import cats.implicits._
 
 import scala.util.{Failure, Success}
 
@@ -77,8 +76,9 @@ object FreeApplicativeExample extends App {
 
   import cats.data.Kleisli
   import cats.implicits._
-  import scala.concurrent.Future
+
   import scala.concurrent.ExecutionContext.Implicits.global
+  import scala.concurrent.Future
 
   type ParValidator[A] = Kleisli[Future, String, A]
 
