@@ -27,6 +27,8 @@ lazy val commonDependencies = Seq(
   "org.scalacheck" %% "scalacheck" % scalaCheckVersion,
   "org.scalatest" %% "scalatest" % scalaTestVersion,
   "org.scalactic" %% "scalactic" % scalaTestVersion,
+  "org.typelevel" %% "cats-laws" % catsVersion,
+  "org.typelevel" %% "cats-testkit" % catsVersion,
   "com.github.julien-truffaut" %%  "monocle-law" % monocleVersion
 ).map(_  % Test)
 

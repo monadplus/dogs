@@ -87,8 +87,6 @@ object FreeMonadExample extends App {
   import cats.data._
   type KVStoreState[A] = State[Map[String, Any], A]
 
-  /*_*/
-
   val compiler = λ[Algebra ~> KVStoreState] {
     case Put(k, v) =>
       State.modify[Map[String, Any]](_ + (k -> v))
@@ -97,8 +95,6 @@ object FreeMonadExample extends App {
     case Delete(k) =>
       State.modify[Map[String, Any]](_ - k)
   }
-
-  /*_*/
 
   // 6.- Stack-safety
 

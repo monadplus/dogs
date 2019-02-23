@@ -1,4 +1,3 @@
-import cats._
 import cats.data.State
 import cats.{Eval, Foldable, Traverse}
 import cats.implicits._
@@ -20,8 +19,6 @@ object Examples {
       else lb
     }.value
 
-  /*_*/
-  def mapWithIndex[F[_], A, B](fa: F[A])(f: (A, Int) => B)(implicit F: Traverse[F]): F[B] =
-    F.traverse(fa)(a => State((s: Int) => (s + 1, f(a, s)))).runA(0).value
-  /*_*/
+  def mapWithIndex[F[_]: Traverse, A, B](fa: F[A])(f: (A, Int) => B): F[B] =
+    fa.traverse(a => State((s: Int) => (s + 1, f(a, s)))).runA(0).value
 }
