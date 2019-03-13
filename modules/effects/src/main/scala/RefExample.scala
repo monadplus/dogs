@@ -53,13 +53,12 @@ object RefExample extends IOApp {
   object StopIteration extends Exception
 
   def mkIterator[A](seq: Stream[A]): IO[IO[A]] =
-    for {
-      ref <- Ref[IO].of(seq)
-      next = ref.get.flatMap {
+    Ref[IO].of(seq).map { ref =>
+      ref.get.flatMap {
         case x #:: xs => ref.set(xs).as(x)
         case _        => IO.raiseError[A](StopIteration)
       }
-    } yield next
+    }
 
   val program3 = for {
     next <- mkIterator(Stream(1, 2, 3))

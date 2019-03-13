@@ -60,20 +60,19 @@ object CatsIO extends App {
 
 //  loop[IO](10000).unsafeRunSync()
 
+  // The real implementation is quite similar (not the cancelable part)
   def sleepDIY(d: FiniteDuration)(implicit sc: ScheduledExecutorService): IO[Unit] =
     IO.cancelable { cb =>
-      val r = new Runnable { def run() = println("Running"); cb(Right(())) }
+      val r = new Runnable { def run() = cb(Right(println("Running"))) }
       val f = sc.schedule(r, d.length, d.unit)
 
-      IO { println("Canceling runnable"); f.cancel(true) }.map(_ => ())
+      IO { println("Canceling runnable"); f.cancel(true) }.void
     }
 
-  // it blocks :shrug:
-  val p = for {
-    _ <- IO { println("Before") }
-    res <- sleepDIY(1.seconds) *> IO.pure(10)
-    _ <- IO { println("After") }
-  } yield res
+  (for {
+    fiber <- sleepDIY(2.seconds).start
+    _ <- fiber.cancel
+  } yield ())//.unsafeRunSync
 
   // --------------------------------------------------
   // --------------------------------------------------
@@ -239,41 +238,6 @@ object CatsIO extends App {
     } yield ()
 
 //  timing[IO].unsafeRunSync()
-
-  /**
-  John A. De Goes
-  @jdegoes
-  Jan 14 23:25
-  @monadplus Instead of fiber.join, call fiber.await. Join says, "the outcome of the fiber will be my outcome", await says, "just let me know what happened".
-    */
-  /**
-    * Author: Fabio Labella
-    */
-  def await[F[_]: Concurrent, A](fa: F[A]): F[(F[Option[Either[Throwable, A]]], CancelToken[F])] =
-    Deferred[F, Option[Either[Throwable, A]]].flatMap { result =>
-      val action = {
-        fa.attempt.flatMap { r =>
-          result.complete(r.some).uncancelable
-        }
-      }.guaranteeCase {
-        case ExitCase.Canceled => Concurrent[F].delay(println("Canceled")) *> result.complete(None)
-        case _                 => ().pure[F]
-      }
-
-      action.start.bracketCase { fiber =>
-        (result.get -> fiber.cancel).pure[F]
-      } {
-        case (fiber, ExitCase.Canceled) => fiber.cancel
-        case (_, _)                     => ().pure[F]
-      }
-    }
-
-  val readFileOrNone =
-    for {
-      (result, cancelToken) <- await(readFile0(new File("data/lore.txt")))
-      _ <- IO.sleep(2.seconds) <* cancelToken
-      text <- result // this will block
-    } yield text
 
 //  println { readFileOrNone.unsafeRunSync() }
 
