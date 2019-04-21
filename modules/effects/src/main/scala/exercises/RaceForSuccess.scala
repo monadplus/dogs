@@ -36,8 +36,18 @@ object RaceForSuccess extends IOApp {
     }
   }
 
+  // final class CompositeException(val head: Throwable, val tail: NonEmptyList[Throwable])
+  //  extends RuntimeException(
+  //    s"Multiple exceptions were thrown (${1 + tail.size}), " +
+  //    s"first ${head.getClass.getName}: ${head.getMessage}")
+  //    with Serializable {
+  //
+  //  /** Returns the set of all errors wrapped by this composite. */
+  //  def all: NonEmptyList[Throwable] =
+  //    head :: tail
+  //}
   case class CompositeException(ex: NonEmptyList[Throwable])
-      extends Exception("All race candidates have failed") {
+      extends RuntimeException("All race candidates have failed") with Serializable {
     def mkString: String = ex.map(_.getMessage).toList.mkString(", ")
     def and(e: Throwable): CompositeException = CompositeException(ex :+ e)
   }

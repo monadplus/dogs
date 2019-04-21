@@ -25,27 +25,6 @@ object CatsIO extends App {
   implicit val global: ExecutionContext = scala.concurrent.ExecutionContext.Implicits.global
   implicit val timer: Timer[IO] = IO.timer(global)
 
-  type Callback[-A] = Either[Throwable, A] => Unit
-
-  class PurePromise[F[_]: Async, A](ref: Ref[F, Either[List[Callback[A]], A]]) {
-    def get: F[A] = Async[F].asyncF { cb =>
-      ref.modify {
-        case r @ Right(value) =>
-          r -> Sync[F].delay(cb(Right(value)))
-        case Left(waiting) =>
-          Left(cb :: waiting) -> Sync[F].unit
-      }
-    }
-
-    def complete(value: A): F[Unit] =
-      (ref.modify {
-        case current @ Right(_) =>
-          (current, ().pure[F])
-        case Left(waiting) =>
-          (Right(value), Sync[F].delay(waiting.foreach(cb => cb(Right(value)))))
-      }).flatten
-  }
-
   // IO is trampolined
   def loop[F[_]: Async](n: Int): F[Int] =
     for {
