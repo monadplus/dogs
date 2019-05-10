@@ -21,8 +21,8 @@ object CatsIO extends App {
 
   implicit val scheduledExecutorService: ScheduledExecutorService =
     Executors.newScheduledThreadPool(4)
-  implicit val cs: ContextShift[IO] = IOContextShift.global
-  implicit val global: ExecutionContext = scala.concurrent.ExecutionContext.Implicits.global
+    implicit val global: ExecutionContext = scala.concurrent.ExecutionContext.Implicits.global
+    implicit val cs: ContextShift[IO] = IO.contextShift(ExecutionContext.fromExecutor(scheduledExecutorService))
   implicit val timer: Timer[IO] = IO.timer(global)
 
   // IO is trampolined

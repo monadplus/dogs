@@ -20,8 +20,7 @@ import scala.concurrent.duration._
 object Concurrency extends App {
 
   // Required by ConcurrentIO
-  implicit val cs: ContextShift[IO] =
-    IOContextShift.global
+  implicit val cs: ContextShift[IO] = IO.contextShift(scala.concurrent.ExecutionContext.Implicits.global)
 
   trait OwnRef[F[_], A] {
     def get: F[A]

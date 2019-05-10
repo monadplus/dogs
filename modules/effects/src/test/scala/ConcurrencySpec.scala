@@ -9,7 +9,7 @@ import cats.effect.internals.IOContextShift
 class ConcurrencySpec extends FunSpec {
 
   // TODO: Concurrent requires ContextShift
-  implicit val cs: ContextShift[IO] = IOContextShift.global
+  implicit val cs: ContextShift[IO] = IO.contextShift(scala.concurrent.ExecutionContext.Implicits.global)
 
   def readFileContent(file: File): String = {
     val reader = new BufferedReader(new FileReader(file))

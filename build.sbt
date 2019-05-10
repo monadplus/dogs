@@ -4,14 +4,16 @@ resolvers in Global ++= Seq(
 )
 
 // Library versions all in one place, for convenience and sanity.
-lazy val catsVersion = "1.4.0"
-lazy val catsEffectsVersion = "1.0.0"
+lazy val catsVersion = "1.6.0"
+lazy val catsEffectsVersion = "1.2.0"
 lazy val mouseVersion = "0.18"
 lazy val kittensVersion = "1.1.1"
 lazy val kindProjectorVersion = "0.9.8"
 lazy val monocleVersion = "1.5.0" // 1.5.0-cats based on cats 1.0.x
 lazy val scalaCheckVersion = "1.14.0"
 lazy val scalaTestVersion = "3.0.5"
+lazy val fs2V = "1.0.4"
+lazy val shapelessV = "2.3.3"
 lazy val commonDependencies = Seq(
   "org.typelevel" %% "cats-core" % catsVersion, // required
   "org.typelevel" %% "cats-macros" % catsVersion, // required by core
@@ -22,7 +24,10 @@ lazy val commonDependencies = Seq(
   "org.typelevel" %% "cats-effect" % catsEffectsVersion,
   "com.github.julien-truffaut" %%  "monocle-core"  % monocleVersion,
   "com.github.julien-truffaut" %%  "monocle-macro" % monocleVersion,
-  "io.monadplus" %% "equality-core" % "0.0.1"
+  "io.monadplus" %% "equality-core" % "0.0.2",
+  "co.fs2" %% "fs2-core" % fs2V,
+  "co.fs2" %% "fs2-io" % fs2V,
+  "com.chuusai" %% "shapeless" % shapelessV
 ) ++ Seq(
   "org.scalacheck" %% "scalacheck" % scalaCheckVersion,
   "org.scalatest" %% "scalatest" % scalaTestVersion,
