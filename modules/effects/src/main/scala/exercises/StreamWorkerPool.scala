@@ -1,17 +1,14 @@
 package exercises
 
-import cats._
-import cats.data._
 import cats.implicits._
 import cats.effect._
-import cats.effect.implicits._
 import cats.effect.concurrent._
+
+import fs2._
+import fs2.concurrent.Queue
 
 import scala.util.Random
 import scala.concurrent.duration._
-import fs2._
-import fs2.io._
-import fs2.concurrent.Queue
 
 // - Processing jobs must run in parallel
 // - Submitting a processing request must wait if all workers are busy.
@@ -64,9 +61,10 @@ object StreamWorkerPool extends IOApp {
         Ref.of[IO, Set[Id]](Set.empty).flatMap { ids =>
           def reQueue(w: IdWorker[A, B]): IO[Unit] =
             ids.get.flatMap { ids =>
-              IO(println(ids)) >> queue.enqueue1(w).whenA(ids.contains(w.id))
+              queue.enqueue1(w).whenA(ids.contains(w.id))
             }
 
+          // Maybe races.
           def enqueue(w: Worker[A, B]): IO[Unit] =
             ids
               .modify { s =>
@@ -96,7 +94,9 @@ object StreamWorkerPool extends IOApp {
                   enqueue(w)
 
                 def removeAllWorkers: IO[Unit] =
-                  ids.set(Set.empty) >> ids.get.flatMap(ids => IO(println(ids)))
+                  ids.set(Set.empty).flatMap { _ =>
+                    queue.dequeue.compile.drain
+                  }
               }
             }
         }
@@ -105,42 +105,38 @@ object StreamWorkerPool extends IOApp {
 
   val testPool: IO[WorkerPool[Int, Int]] =
     List
-      .range(0, 2)
+      .range(0, 10)
       .traverse(mkWorker)
       .flatMap(WorkerPool.of)
 
-  def run(args: List[String]) =
-//    testPool
-//      .flatMap { pool =>
-////        val remove =
-////          Stream.awakeEvery[IO](2.seconds).evalMap(_ => pool.removeAllWorkers)
-////
-////        val add =
-////          Stream.awakeEvery[IO](100.millis).evalMap(_ => mkWorker(0).flatMap(w => pool.addWorker(w)))
-////
-////        val both =
-////          remove.concurrently(add)
-//
-//
-//        // TODO: Canceled appears to many times
-//        val run =
-//          Stream
-//            .range[IO](0, 1000)
-//            .mapAsync(4) { v =>
-////              The main problem with this is waiting for an available worker is also considered "canceled"
-////              IO.race(pool.exec(v).attempt, IO.sleep(400.millis) >> IO(println("canceled")))
-//              pool.exec(v).attempt
-//            }
-//
-//        run.concurrently(Stream.eval(pool.removeAllWorkers)).compile.drain
-//      }
-//      .as(ExitCode.Success)
+  def testRemoveAll() =
+    for {
+      pool <- WorkerPool.of[Unit, Unit](List.fill(10)(_ => IO.sleep(2.seconds) >> IO(println("after wait"))))
+      _    <- pool.exec(()).start
+      _    <- pool.removeAllWorkers
+      _    <- pool.exec(()) >> IO(println("after exec"))
+    } yield ExitCode.Error
 
-  for {
-    pool <- WorkerPool.of[Unit, Unit](List.fill(10)(_ => IO.sleep(2.seconds) >> IO(println("after wait"))))
-    _    <- pool.exec(()).start
-    _    <- pool.removeAllWorkers
-    _    <- pool.exec(()) >> IO(println("after exec"))
-  } yield ExitCode.Error
+  def testConcurrency() =
+    testPool
+      .flatMap { pool =>
+        val remove = Stream.awakeEvery[IO](2.seconds).evalMap(_ => pool.removeAllWorkers)
+        val add = Stream.awakeEvery[IO](100.millis).evalMap(_ => mkWorker(0).flatMap(w => pool.addWorker(w)))
+        val both = remove.concurrently(add)
+        val run =
+          Stream
+            .range[IO](0, 100)
+            .mapAsync(4) { v =>
+              // The main problem with this is waiting for an available worker is also considered "canceled"
+              // IO.race(pool.exec(v).attempt, IO.sleep(400.millis) >> IO(println("canceled")))
+              pool.exec(v).attempt
+            }
+
+        run.concurrently(both).compile.drain
+      }
+      .as(ExitCode.Success)
+
+  def run(args: List[String]): IO[ExitCode] =
+    testConcurrency()
 
 }
