@@ -58,13 +58,13 @@ object SocketListenerExampleDIY extends IOApp {
       Resource.make {
         Sync[F].delay(new BufferedReader(new InputStreamReader(clientSocket.getInputStream())))
       } { reader =>
-        Sync[F].delay(reader.close).handleError(_ => Sync[F].unit)
+        Sync[F].delay(reader.close).handleError(_ => ())
       }
     def writer(clientSocket: Socket): Resource[F, BufferedWriter] =
       Resource.make {
         Sync[F].delay(new BufferedWriter(new PrintWriter(clientSocket.getOutputStream())))
       } { reader =>
-        Sync[F].delay(reader.close).handleError(_ => Sync[F].unit)
+        Sync[F].delay(reader.close).handleError(_ => ())
       }
 
     def readerWriter(clientSocket: Socket): Resource[F, (BufferedReader, BufferedWriter)] =
@@ -83,7 +83,7 @@ object SocketListenerExampleDIY extends IOApp {
     implicit ec: ExecutionContext
   ): F[Unit] = {
     def close(socket: Socket): F[Unit] =
-      Sync[F].delay(socket.close).handleError(_ => Sync[F].unit)
+      Sync[F].delay(socket.close).handleError(_ => ())
 
     for {
       fiber <- Sync[F]

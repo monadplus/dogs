@@ -12,14 +12,14 @@ object PurePromise {
   type Callback[-A] = Either[Throwable, A] => Unit
 }
 
-class PurePromise[F[_]: Async, A](ref: Ref[F, Either[List[Callback[A]], A]]) {
-  def get: F[A] = Async[F].asyncF { cb =>
+class PurePromise[F[_], A](ref: Ref[F, Either[List[Callback[A]], A]])(implicit F: Async[F]) {
+  def get: F[A] = F.asyncF { cb =>
     ref.modify {
       case r @ Right(value) =>
-        r -> Sync[F].delay(cb(Right(value)))
+        r -> F.delay(cb(Right(value)))
       case Left(waiting) =>
-        Left(cb :: waiting) -> Sync[F].unit
-    }
+        Left(cb :: waiting) -> F.unit
+    }.flatten
   }
 
   def complete(value: A): F[Unit] =

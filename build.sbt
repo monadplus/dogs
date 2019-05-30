@@ -24,7 +24,7 @@ lazy val commonDependencies = Seq(
   "org.typelevel" %% "cats-effect" % catsEffectsVersion,
   "com.github.julien-truffaut" %%  "monocle-core"  % monocleVersion,
   "com.github.julien-truffaut" %%  "monocle-macro" % monocleVersion,
-  "io.monadplus" %% "equality-core" % "0.0.2",
+  "io.monadplus" %% "equality-core" % "0.0.3-SNAPSHOT",
   "co.fs2" %% "fs2-core" % fs2V,
   "co.fs2" %% "fs2-io" % fs2V,
   "com.chuusai" %% "shapeless" % shapelessV
@@ -76,7 +76,7 @@ lazy val compilerFlags = Seq(
     "-Ywarn-infer-any",                  // Warn when a type argument is inferred to be `Any`.
     "-Ywarn-nullary-override",           // Warn when non-nullary `def f()' overrides nullary `def f'.
     "-Ywarn-nullary-unit",               // Warn when nullary methods return Unit.
-    "-Ywarn-numeric-widen",              // Warn when numerics are widened.
+//    "-Ywarn-numeric-widen",              // Warn when numerics are widened.
     "-Ywarn-unused:implicits",           // Warn if an implicit parameter is unused.
 //    TODO: uncommented
 //    "-Ywarn-unused:imports",             // Warn if an import selector is not referenced.
@@ -84,7 +84,7 @@ lazy val compilerFlags = Seq(
 //    "-Ywarn-unused:params",              // Warn if a value parameter is unused.
 //    "-Ywarn-unused:patvars",             // Warn if a variable bound in a pattern is unused.
 //    "-Ywarn-unused:privates",            // Warn if a private member is unused.
-//    "-Ywarn-value-discard"               // Warn when non-Unit expression results are unused.
+    "-Ywarn-value-discard"               // Warn when non-Unit expression results are unused.
   ),
   scalacOptions in (Test, compile) --= Seq(
     "-Ywarn-unused:privates",

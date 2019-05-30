@@ -133,8 +133,7 @@ object StreamWorkerPool extends IOApp {
             }
 
         run.concurrently(both).compile.drain
-      }
-      .as(ExitCode.Success)
+      }.as(ExitCode.Success)
 
   def run(args: List[String]): IO[ExitCode] =
     testConcurrency()

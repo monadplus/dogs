@@ -16,6 +16,7 @@ class EqualityCoreSpec extends FreeSpec {
       val a3 = A(Y(false), 10L)
 
       a1 ==== a1
+      a1 ==== a2
       intercept[TestFailedException] {
         a1 ==== a2
       }
